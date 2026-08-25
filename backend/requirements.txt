@@ -2,3 +2,7 @@ fastmcp
 supabase
 python-dotenv
 openai
+langgraph
+langchain-openai
+langchain-mcp-adapters
+langfuse
