@@ -1,48 +1,74 @@
-export type SeverityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NOMINAL';
+export type SeverityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | 'NOMINAL';
 
-export interface Alert {
+export interface RawAlert {
   id: string;
   timestamp: string;
   source: string;
   type: string;
+  location?: string;
   severity: SeverityLevel;
   message: string;
   isFilteredNoise?: boolean;
 }
 
+export interface IncidentClusterRow {
+  cluster_id: string;
+  name: string;
+  primary_location: string;
+  assigned_agent: string;
+  raw_alert_ids: string[];
+  schema_version?: string;
+  suggested_priority?: {
+    score: number;
+    reasonCodes: string[];
+  } | null;
+  clustering_metadata?: {
+    method: string;
+    rawAlertCount: number;
+    spatialWindowMeters: number;
+    temporalWindowSeconds: number;
+  } | null;
+  participating_vehicles?: {
+    role: string;
+    vehicleId: string;
+    workAssignment?: {
+      waId: string;
+      wiStatus: string;
+    };
+  }[] | null;
+}
+
+export interface ClusterWithAlerts extends IncidentClusterRow {
+  alerts: RawAlert[];
+  highestSeverity: SeverityLevel;
+}
+
+// Backward compatibility types
+export type Alert = RawAlert;
+
 export interface IncidentCluster {
-  id: string; // 'Cluster A', 'Cluster B', 'Cluster C'
+  id: string;
   name: string;
   location: string;
   severity: SeverityLevel;
-  status: 'INVESTIGATING' | 'READY_FOR_REVIEW' | 'RESOLVED';
+  status: string;
   affectedAssets: string[];
   downstreamImpact: string;
   assignedAgent: {
     name: string;
     role: string;
-    status: 'idle' | 'running' | 'completed';
+    status: string;
     contextTokens: number;
     maxTokens: number;
   };
   triggeringAlerts: string[];
   telemetrySnapshot: {
     label: string;
-    value: string | number;
+    value: number | string;
     unit: string;
     threshold?: number;
     isAnomaly: boolean;
   }[];
-}
-
-export interface MCPToolCall {
-  id: string;
-  timestamp: string;
-  server: 'mcp-terminal-telemetry' | 'mcp-terminal-diagnostics' | 'mcp-docket-service';
-  tool: string;
-  params: Record<string, any>;
-  response: Record<string, any>;
-  durationMs: number;
 }
 
 export interface DocketItem {
@@ -52,28 +78,43 @@ export interface DocketItem {
   severity: SeverityLevel;
   impact: string;
   rootCause: string;
+  dispatchStatus?: string;
   physicalEvidence: {
-    icon?: string;
     text: string;
-    verified: boolean;
     timestamp: string;
+    verified: boolean;
   }[];
   plcRegisters?: {
     code: string;
     name: string;
-    description: string;
-    category: string;
     status: string;
+    description: string;
+    category?: string;
   }[];
   recommendedActions: string[];
-  dispatchedAction?: string;
-  dispatchStatus?: 'PENDING' | 'DISPATCHED' | 'ACKNOWLEDGED';
+}
+
+export interface MCPToolCall {
+  id: string;
+  agentId?: string;
+  server: string;
+  tool: string;
+  timestamp: string;
+  durationMs: number;
+  status?: 'SUCCESS' | 'FAILED' | 'PENDING' | string;
+  params?: Record<string, any>;
+  result?: Record<string, any>;
+  response?: Record<string, any>;
 }
 
 export interface TerminalTelemetryPoint {
   time: string;
-  hydraulicPressureBar: number;
-  busbarTempC: number;
-  coolingPressurePsi: number;
-  batterySocPct: number;
+  agvHeadwayMeters?: number;
+  agvPressureBar?: number;
+  hydraulicPressureBar?: number;
+  bcssBusTempC?: number;
+  busbarTempC?: number;
+  coolingPressurePsi?: number;
+  batterySocPct?: number;
+  scadaMsgFrequencyHz?: number;
 }

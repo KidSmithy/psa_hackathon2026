@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import { DocketItem } from '../types';
-import { FileText, ShieldAlert, CheckCircle2, Cpu, Wrench, ArrowRightCircle, Sparkles, AlertOctagon, Check } from 'lucide-react';
+import { 
+  FileText, 
+  CheckCircle2, 
+  Cpu, 
+  Wrench, 
+  ArrowRightCircle, 
+  Sparkles, 
+  Check
+} from 'lucide-react';
 
 interface HumanReviewDocketProps {
   dockets: DocketItem[];
@@ -18,15 +26,15 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
 
   const handleDispatch = (action: string) => {
     setDispatched(prev => ({ ...prev, [action]: true }));
-    if (onDispatchAction) {
+    if (onDispatchAction && currentDocket) {
       onDispatchAction(currentDocket.id, action);
     }
   };
 
   if (!currentDocket) {
     return (
-      <div className="bg-maritime-slate border border-maritime-border rounded-xl p-6 text-center text-slate-400 font-mono text-xs">
-        No active docket generated for this cluster.
+      <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-mono">
+        No active review docket available.
       </div>
     );
   }
@@ -34,170 +42,156 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
   const isCritical = currentDocket.severity === 'CRITICAL';
 
   return (
-    <div className="bg-maritime-slate border border-maritime-border rounded-xl flex flex-col h-full overflow-hidden shadow-2xl">
-      {/* Panel Header */}
-      <div className="p-4 border-b border-maritime-border bg-maritime-surface/60 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <FileText className="w-5 h-5 text-port-cyan" />
-          <div>
-            <h2 className="font-bold text-white text-sm tracking-wide">
-              SYNTHESIZED HUMAN REVIEW DOCKET
-            </h2>
-            <p className="text-[11px] text-slate-400 font-mono">
-              CONSOLIDATED OPERATIONAL DOSSIER
-            </p>
-          </div>
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between font-mono">
+          <span
+            className={`text-xs font-bold px-3 py-1 rounded uppercase tracking-wider ${
+              isCritical
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-amber-50 text-amber-800 border border-amber-200'
+            }`}
+          >
+            {currentDocket.severity} SEVERITY • ACTION REQUIRED
+          </span>
+          <span className="text-slate-500 text-xs font-mono">DOCKET ID: {currentDocket.id}</span>
         </div>
 
-        <span className="bg-hazard-red/20 text-hazard-red border border-hazard-red/40 text-[10px] px-2.5 py-1 rounded font-mono font-bold uppercase animate-pulse">
-          ACTION REQUIRED
-        </span>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-wide font-sans">
+          {currentDocket.title}
+        </h1>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 font-mono text-xs">
+          <span className="text-red-600 font-bold">OPERATIONAL DOWNSTREAM IMPACT: </span>
+          <span className="text-slate-800">{currentDocket.impact}</span>
+        </div>
       </div>
 
-      {/* Docket Content */}
-      <div className="p-4 flex-1 overflow-y-auto space-y-4 font-sans text-xs">
-        {/* Incident Summary Card */}
-        <div className="bg-abyss/90 border border-maritime-border rounded-xl p-4 relative overflow-hidden">
-          <div className="flex items-center justify-between font-mono">
-            <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                isCritical
-                  ? 'bg-hazard-red/20 text-hazard-red border border-hazard-red/40'
-                  : 'bg-caution-amber/20 text-caution-amber border border-caution-amber/40'
-              }`}
+      {/* Verified Root Cause */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-3">
+        <div className="flex items-center space-x-2 text-sky-700 font-mono font-bold text-sm">
+          <Sparkles className="w-5 h-5 text-sky-600" />
+          <span>AI TRIAGE VERIFIED ROOT CAUSE</span>
+        </div>
+
+        <div className="bg-sky-50 border-2 border-sky-200 rounded-xl p-4 font-mono text-sm text-slate-900 leading-relaxed shadow-sm">
+          {currentDocket.rootCause}
+        </div>
+      </div>
+
+      {/* Physical Evidence */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between font-mono">
+          <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <span>MULTIMODAL HARDWARE EVIDENCE PROOF</span>
+          </div>
+          <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded font-bold">
+            MCP CERTIFIED
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {currentDocket.physicalEvidence.map((evidence: { text: string; timestamp: string; verified: boolean }, idx: number) => (
+            <div
+              key={idx}
+              className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start space-x-3.5 shadow-sm"
             >
-              {currentDocket.severity} SEVERITY
-            </span>
-            <span className="text-slate-400 text-[11px]">ID: {currentDocket.id}</span>
-          </div>
-
-          <h3 className="text-base font-bold text-white mt-2">
-            {currentDocket.title}
-          </h3>
-
-          <div className="mt-2 text-slate-300 bg-maritime-surface/80 p-2.5 rounded-lg border border-maritime-border font-mono text-[11px]">
-            <span className="text-hazard-red font-semibold">Operational Impact: </span>
-            {currentDocket.impact}
-          </div>
-        </div>
-
-        {/* Root Cause Analysis (Deterministic AI Handoff) */}
-        <div className="bg-abyss/80 border border-maritime-border rounded-xl p-4 space-y-2">
-          <div className="flex items-center space-x-2 text-port-cyan font-mono font-semibold text-xs">
-            <Sparkles className="w-4 h-4 text-port-cyan" />
-            <span>VERIFIED ROOT CAUSE</span>
-          </div>
-          <p className="text-slate-200 text-xs leading-relaxed bg-port-cyan/5 border border-port-cyan/20 p-3 rounded-lg font-mono">
-            {currentDocket.rootCause}
-          </p>
-        </div>
-
-        {/* Multimodal Hardware Evidence Checklist */}
-        <div className="bg-abyss/80 border border-maritime-border rounded-xl p-4 space-y-2.5">
-          <div className="flex items-center justify-between font-mono text-xs text-slate-300">
-            <div className="flex items-center space-x-2 font-semibold">
-              <CheckCircle2 className="w-4 h-4 text-nominal-emerald" />
-              <span>PHYSICAL EVIDENCE VERIFICATION</span>
+              <div className="mt-0.5 bg-emerald-50 text-emerald-600 p-1.5 rounded-lg border border-emerald-200">
+                <Check className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <div className="text-slate-900 font-mono text-xs leading-relaxed font-medium">
+                  {evidence.text}
+                </div>
+                <div className="text-[11px] text-slate-500 font-mono">
+                  Timestamp: <span className="text-sky-700 font-bold">{evidence.timestamp}</span>
+                </div>
+              </div>
             </div>
-            <span className="text-[10px] text-slate-500">MCP Verified</span>
+          ))}
+        </div>
+      </div>
+
+      {/* PLC Registers */}
+      {currentDocket.plcRegisters && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between font-mono">
+            <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm">
+              <Cpu className="w-5 h-5 text-sky-600" />
+              <span>PLC REGISTERS DECODED</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">CAN-BUS V3</span>
           </div>
 
-          <div className="space-y-2">
-            {currentDocket.physicalEvidence.map((evidence, idx) => (
+          <div className="space-y-2.5 font-mono">
+            {currentDocket.plcRegisters.map((reg: { code: string; name: string; status: string; description: string }, idx: number) => (
               <div
                 key={idx}
-                className="bg-maritime-surface/70 border border-maritime-border/80 rounded-lg p-2.5 flex items-start space-x-2.5"
+                className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm"
               >
-                <div className="mt-0.5 bg-nominal-emerald/10 text-nominal-emerald p-1 rounded">
-                  <Check className="w-3 h-3 text-nominal-emerald" />
+                <div className="flex items-center justify-between">
+                  <span className="bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 rounded font-bold text-xs">
+                    {reg.code}
+                  </span>
+                  <span className="text-[10px] bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded font-bold">
+                    {reg.status}
+                  </span>
                 </div>
-                <div className="flex-1">
-                  <div className="text-slate-200 font-mono text-[11px] leading-relaxed">
-                    {evidence.text}
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-1">
-                    Timestamp: {evidence.timestamp} • SCADA Certified
-                  </div>
-                </div>
+                <div className="text-slate-900 font-bold text-xs">{reg.name}</div>
+                <div className="text-[11px] text-slate-600">{reg.description}</div>
               </div>
             ))}
           </div>
         </div>
+      )}
 
-        {/* PLC Fault Registers Inspector */}
-        {currentDocket.plcRegisters && (
-          <div className="bg-abyss/80 border border-maritime-border rounded-xl p-4 space-y-2">
-            <div className="flex items-center space-x-2 text-slate-300 font-mono font-semibold text-xs">
-              <Cpu className="w-4 h-4 text-port-cyan" />
-              <span>PLC HEX FAULT REGISTERS DECODED</span>
-            </div>
-            <div className="space-y-1.5 font-mono">
-              {currentDocket.plcRegisters.map((reg, idx) => (
-                <div
-                  key={idx}
-                  className="bg-maritime-surface p-2.5 rounded-lg border border-maritime-border flex items-center justify-between text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center space-x-2">
-                      <span className="bg-port-cyan/20 text-port-cyan px-1.5 py-0.2 rounded font-bold">
-                        {reg.code}
-                      </span>
-                      <span className="text-white font-semibold">{reg.name}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">{reg.description}</div>
-                  </div>
-                  <span className="text-[10px] bg-hazard-red/20 text-hazard-red px-2 py-0.5 rounded font-bold">
-                    {reg.status}
-                  </span>
+      {/* Action Dispatch */}
+      <div className="bg-white border-2 border-sky-500 rounded-xl p-6 shadow-md space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2 text-slate-900 font-mono font-bold text-sm">
+            <Wrench className="w-5 h-5 text-sky-600" />
+            <span>OPERATIONAL ACTION DISPATCH</span>
+          </div>
+        </div>
+
+        <div className="space-y-3 font-mono">
+          {currentDocket.recommendedActions.map((action: string, idx: number) => {
+            const isDispatched = dispatched[action];
+            return (
+              <div
+                key={idx}
+                className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 shadow-sm"
+              >
+                <div className="text-slate-900 text-xs leading-relaxed font-semibold">
+                  Action #{idx + 1}: {action}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* Recommended Actions & One-Click Operator Dispatch */}
-        <div className="bg-abyss/90 border border-port-cyan/40 rounded-xl p-4 space-y-3">
-          <div className="flex items-center space-x-2 text-white font-mono font-bold text-xs">
-            <Wrench className="w-4 h-4 text-port-cyan" />
-            <span>RECOMMENDED OPERATIONAL ACTIONS</span>
-          </div>
-
-          <div className="space-y-2 font-mono">
-            {currentDocket.recommendedActions.map((action, idx) => {
-              const isActionDispatched = dispatched[action];
-              return (
-                <div
-                  key={idx}
-                  className="bg-maritime-surface border border-maritime-border rounded-lg p-3 space-y-2"
+                <button
+                  onClick={() => handleDispatch(action)}
+                  disabled={isDispatched}
+                  className={`w-full py-2.5 px-4 rounded-lg text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
+                    isDispatched
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-md hover:shadow-lg'
+                  }`}
                 >
-                  <div className="text-slate-200 text-xs leading-relaxed">
-                    {idx + 1}. {action}
-                  </div>
-                  <button
-                    onClick={() => handleDispatch(action)}
-                    disabled={isActionDispatched}
-                    className={`w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
-                      isActionDispatched
-                        ? 'bg-nominal-emerald/20 text-nominal-emerald border border-nominal-emerald/40 cursor-default'
-                        : 'bg-port-cyan hover:bg-port-cyan-glow text-abyss font-bold shadow-lg shadow-port-cyan/10 hover:shadow-port-cyan/25'
-                    }`}
-                  >
-                    {isActionDispatched ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>DISPATCHED TO FIELD TERMINAL</span>
-                      </>
-                    ) : (
-                      <>
-                        <ArrowRightCircle className="w-3.5 h-3.5" />
-                        <span>AUTHORIZE & EXECUTE ACTION</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                  {isDispatched ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-700" />
+                      <span>DISPATCHED TO FIELD TERMINAL</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRightCircle className="w-4 h-4" />
+                      <span>AUTHORIZE & EXECUTE ACTION</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

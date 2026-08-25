@@ -54,7 +54,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
       id: 'msg-welcome',
       sender: 'assistant',
       timestamp: '20:45:00',
-      text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+      text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below and press **Enter** to watch the multi-agent spawning and triage animation.',
     }
   ]);
 
@@ -73,7 +73,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
     scrollToBottom();
   }, [messages, isSimulating]);
 
-  // Conversational Multi-Agent Spawning Simulation
   const triggerAgentSpawningSimulation = (customQuery?: string, targetCluster: 'Cluster A' | 'Cluster B' = 'Cluster A') => {
     if (isSimulating) return;
     setIsSimulating(true);
@@ -82,7 +81,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
     const clusterLabel = isClusterA ? 'Cluster A: Transfer Lane 7 Bottleneck' : 'Cluster B: BCSS-02 Charger Trip';
     const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // Step 1: User Request Message
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -91,7 +89,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Step 2: Coordinator Assessment (after 600ms)
     setTimeout(() => {
       const coordMsg: ChatMessage = {
         id: `coord-${Date.now()}`,
@@ -101,7 +98,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
       };
       setMessages(prev => [...prev, coordMsg]);
 
-      // Step 3: Agent Spawning & Isolation Sandbox Card (after 1400ms)
       setTimeout(() => {
         const spawnMsgId = `spawn-${Date.now()}`;
         const spawnMsg: ChatMessage = {
@@ -137,7 +133,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
         };
         setMessages(prev => [...prev, spawnMsg]);
 
-        // Step 4: Final Synthesized Review Docket Card (after 2800ms)
         setTimeout(() => {
           const docketData = isClusterA ? INITIAL_DOCKETS[0] : INITIAL_DOCKETS[1];
           const docketMsg: ChatMessage = {
@@ -213,45 +208,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                 SPAWNING VISUALIZER
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-mono">
-              Type any query below to trigger multi-agent spawning & triage
-            </p>
           </div>
         </div>
 
-        {/* Action Trigger in Header */}
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => triggerAgentSpawningSimulation(undefined, 'Cluster A')}
-            disabled={isSimulating}
-            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition-all shadow-sm ${
-              isSimulating
-                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 active:scale-95'
-            }`}
-          >
-            <Zap className={`w-3.5 h-3.5 ${isSimulating ? 'animate-spin' : 'animate-pulse'}`} />
-            <span>{isSimulating ? 'Spawning...' : 'Trigger Spawn Demo'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setMessages([
-                {
-                  id: 'msg-welcome',
-                  sender: 'assistant',
-                  timestamp: '20:45:00',
-                  text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
-                }
-              ]);
-              setDispatchedActions({});
-            }}
-            className="p-2 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-xl transition-colors shadow-sm"
-            title="Reset Conversation"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            setMessages([
+              {
+                id: 'msg-welcome',
+                sender: 'assistant',
+                timestamp: '20:45:00',
+                text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below and press **Enter** to watch the multi-agent spawning and triage animation.',
+              }
+            ]);
+            setDispatchedActions({});
+          }}
+          className="p-2 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-xl transition-colors shadow-sm"
+          title="Reset Conversation"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Messages Feed */}
@@ -264,7 +240,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
               key={msg.id}
               className={`flex items-start space-x-3.5 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}
             >
-              {/* Sender Avatar */}
               <div
                 className={`p-2 rounded-xl border flex-shrink-0 shadow-sm ${
                   isUser
@@ -275,10 +250,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                 {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
               </div>
 
-              {/* Message Body */}
               <div className={`space-y-3 max-w-[88%] ${isUser ? 'items-end' : 'items-start'}`}>
-                
-                {/* Standard Text Bubble */}
                 {msg.text && (
                   <div
                     className={`p-4 rounded-2xl text-xs leading-relaxed font-sans shadow-sm ${
@@ -294,11 +266,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                   </div>
                 )}
 
-                {/* Conversational Agent Spawning & Isolation Sandbox Card */}
                 {msg.isSpawningAnimation && msg.spawningProgress && (
-                  <div className="bg-white border-2 border-sky-300 rounded-2xl p-5 shadow-md space-y-3.5 font-mono text-xs w-full animate-fadeIn">
-                    
-                    {/* Sandbox Header Badge */}
+                  <div className="bg-white border-2 border-sky-300 rounded-2xl p-5 shadow-md space-y-3.5 font-mono text-xs w-full">
                     <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                       <div className="flex items-center space-x-2.5">
                         <div className="p-2 bg-sky-50 rounded-xl text-sky-600 border border-sky-200 shadow-sm">
@@ -310,15 +279,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3" />
-                          0% CONTAMINATION
-                        </span>
-                      </div>
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3" />
+                        0% CONTAMINATION
+                      </span>
                     </div>
 
-                    {/* Dedicated Isolated Token Budget Bar */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
                       <div className="flex justify-between text-[11px]">
                         <span className="text-slate-600 flex items-center gap-1">
@@ -337,7 +303,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </div>
                     </div>
 
-                    {/* Active MCP Execution Ticker */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
                         <Activity className="w-3 h-3 text-emerald-600" />
@@ -347,35 +312,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                         {msg.spawningProgress.activeTool}
                       </div>
                     </div>
-
-                    {/* Expandable Execution Logs */}
-                    <div className="pt-1">
-                      <button
-                        onClick={() => toggleLogExpand(msg.id)}
-                        className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1"
-                      >
-                        <span>Diagnostic Schema Logs ({msg.spawningProgress.logs.length})</span>
-                        {expandedLogs[msg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-
-                      {expandedLogs[msg.id] && (
-                        <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px]">
-                          {msg.spawningProgress.logs.map((log, i) => (
-                            <div key={i} className="text-slate-700 py-0.5">
-                              {log}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
 
-                {/* Final Synthesized Human Review Docket Card in Chat */}
                 {msg.docket && (
-                  <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full animate-fadeIn">
-                    
-                    {/* Severity Header */}
+                  <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                       <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded uppercase ${
                         msg.docket.severity === 'CRITICAL' 
@@ -391,13 +332,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       {msg.docket.title}
                     </h3>
 
-                    {/* Operational Impact */}
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono">
-                      <span className="text-red-600 font-bold">Downstream Impact: </span>
-                      <span className="text-slate-800">{msg.docket.impact}</span>
-                    </div>
-
-                    {/* Verified Root Cause */}
                     <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 space-y-1">
                       <div className="text-xs font-bold text-sky-800 flex items-center gap-1.5 font-mono">
                         <Sparkles className="w-4 h-4 text-sky-600" />
@@ -408,7 +342,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </p>
                     </div>
 
-                    {/* Physical Hardware Evidence */}
                     <div className="space-y-2">
                       <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -416,7 +349,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </div>
 
                       <div className="space-y-1.5">
-                        {msg.docket.physicalEvidence.map((ev, i) => (
+                        {msg.docket.physicalEvidence.map((ev: { text: string; timestamp: string; verified: boolean }, i: number) => (
                           <div key={i} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex items-start space-x-2 text-xs font-mono">
                             <Check className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
                             <span className="text-slate-800 text-[11px] leading-relaxed">{ev.text}</span>
@@ -425,7 +358,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </div>
                     </div>
 
-                    {/* Interactive Action Authorization */}
                     <div className="pt-2 border-t border-slate-100 space-y-2">
                       <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
                         <Wrench className="w-4 h-4 text-sky-600" />
@@ -433,7 +365,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </div>
 
                       <div className="space-y-2">
-                        {msg.docket.recommendedActions.map((action, idx) => {
+                        {msg.docket.recommendedActions.map((action: string, idx: number) => {
                           const isDispatched = dispatchedActions[action];
                           return (
                             <button
@@ -468,53 +400,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
           );
         })}
 
-        {/* Live Loading Pulse indicator */}
-        {isSimulating && (
-          <div className="flex items-center space-x-3 text-slate-600 text-xs font-mono p-3.5 bg-white rounded-2xl border border-sky-200 shadow-sm w-fit animate-pulse">
-            <Bot className="w-4 h-4 text-sky-600 animate-spin" />
-            <span>Coordinator evaluating terminal topology & spawning investigator sub-agents in sandboxes...</span>
-          </div>
-        )}
-
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Prompt Chips */}
-      <div className="px-6 py-2.5 border-t border-slate-100 bg-slate-50/80 flex items-center gap-2 overflow-x-auto">
-        <span className="text-[10px] font-mono text-slate-400 uppercase font-bold flex-shrink-0">
-          Quick Spawning Triggers:
-        </span>
-        <button
-          onClick={() => triggerAgentSpawningSimulation('Diagnose Lane 7 Bottleneck (Cluster A)', 'Cluster A')}
-          disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
-        >
-          🔍 Lane 7 Jam (Cluster A)
-        </button>
-        <button
-          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (Cluster B)', 'Cluster B')}
-          disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
-        >
-          ⚡ BCSS-02 Charger Trip (Cluster B)
-        </button>
-        <button
-          onClick={() => triggerAgentSpawningSimulation('Simulate full multi-agent triage and context isolation', 'Cluster A')}
-          disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
-        >
-          ⚡ Full Spawning Demo
-        </button>
-      </div>
-
-      {/* Bottom Message Input Bar */}
+      {/* Input */}
       <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-white">
         <div className="flex items-center space-x-2 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-sky-500 focus-within:border-sky-500 shadow-inner">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type any message (e.g. 'Investigate Lane 7' or 'Test agent spawning') and press Enter..."
+            placeholder="Type query and press Enter to trigger agent spawning..."
             className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans"
             disabled={isSimulating}
           />

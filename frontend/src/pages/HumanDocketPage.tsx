@@ -8,9 +8,9 @@ import {
   ArrowRightCircle, 
   Sparkles, 
   Check, 
-  Clock,
-  Printer,
-  Bot
+  Clock, 
+  Printer, 
+  Bot 
 } from 'lucide-react';
 
 interface HumanDocketPageProps {
@@ -127,7 +127,6 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
                 <span>AI TRIAGE VERIFIED ROOT CAUSE</span>
               </div>
 
-              {/* In-card button to test agent spawning in chat */}
               <button
                 onClick={onNavigateToChat}
                 className="flex items-center space-x-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs px-3 py-1.5 rounded-lg font-mono font-semibold transition-all shadow-sm active:scale-95"
@@ -160,7 +159,7 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
             </div>
 
             <div className="space-y-3">
-              {currentDocket.physicalEvidence.map((evidence, idx) => (
+              {currentDocket.physicalEvidence.map((evidence: { text: string; timestamp: string; verified: boolean }, idx: number) => (
                 <div
                   key={idx}
                   className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start space-x-3.5 shadow-sm"
@@ -197,7 +196,7 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
               </div>
 
               <div className="space-y-2.5 font-mono">
-                {currentDocket.plcRegisters.map((reg, idx) => (
+                {currentDocket.plcRegisters.map((reg: { code: string; name: string; status: string; description: string }, idx: number) => (
                   <div
                     key={idx}
                     className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm"
@@ -235,7 +234,7 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
             </p>
 
             <div className="space-y-3 font-mono">
-              {currentDocket.recommendedActions.map((action, idx) => {
+              {currentDocket.recommendedActions.map((action: string, idx: number) => {
                 const isDispatched = dispatched[action];
                 return (
                   <div
