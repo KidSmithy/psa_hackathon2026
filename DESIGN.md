@@ -76,20 +76,21 @@ The interface is structured around an uncluttered 2-view workflow:
 
 ---
 
-## 3. Design Tokens & Palette (Pure Light Theme)
+## 3. Design Tokens & Palette (PSA Tuas Cyber-Maritime 2040 Light Theme)
 
 | Token / Role | Value Name | Hex Code | Tailwind Token | Semantic Usage |
 | :--- | :--- | :--- | :--- | :--- |
-| **Canvas Background** | Slate Clean Base | `#F8FAFC` | `bg-slate-50` | Global viewport background |
-| **Card / Row Surface**| Pure Crisp White | `#FFFFFF` | `bg-white` | Incident row cards & tables |
-| **Surface Accent** | Slate Muted | `#F1F5F9` | `bg-slate-100` | Expandable drawer & filter containers |
-| **Border / Divider** | Crisp Mesh Border | `#E2E8F0` | `border-slate-200` | 1px clean separators |
-| **Primary Brand** | Ocean Sky | `#0284C7` | `text-sky-600`, `bg-sky-600` | Resolve buttons, active tabs, progress bars |
-| **Critical Severity** | Coral Red | `#DC2626` | `text-red-700`, `bg-red-50` | Critical severity tags & jam alerts |
-| **Caution / Warning** | Industrial Amber | `#D97706` | `text-amber-800`, `bg-amber-50` | High severity, thermal cutoff alerts |
-| **Verified Telemetry**| Emerald Green | `#059669` | `text-emerald-700`, `bg-emerald-50` | Verified evidence checkmarks & 0% contamination |
-| **Primary Text** | Deep Navy Slate | `#0F172A` | `text-slate-900` | Headings & critical metrics |
-| **Secondary Text** | Slate Muted | `#64748B` | `text-slate-500` | Timestamps, locations, and descriptions |
+| **Top Command Bar** | PSA Navy Deep | `#002B49` | `bg-psa-navy text-white` | Header branding & institutional grounding |
+| **Canvas Background**| Anti-Glare Maritime Canvas | `#F0F4FA` | `bg-psa-canvas` | Global viewport background with SCADA micro-grid |
+| **Card / Row Surface**| Pure Crisp Surface | `#FFFFFF` | `bg-white` | Incident row cards & multi-agent pods |
+| **Border / Divider** | Precision Port Border | `#D5E2EE` | `border-psa-border` | 1px clean crisp separators |
+| **Autonomous Electric**| Electric Tuas Teal | `#00C9A7` | `text-tuas-teal`, `bg-tuas-teal` | Multi-agent sandbox pods, AGV routes, conduits |
+| **Laser SCADA Signal**| Tuas Cyan / Sky Blue | `#00B4D8` / `#0284C7` | `text-tuas-cyan`, `bg-tuas-cyan` | MCP tool execution items, active tabs |
+| **PSA Flame Alarm** | PSA Signature Flame Red | `#E63946` | `text-psa-flame`, `bg-psa-flame-bg`| Critical severity tags, twistlock jam alerts |
+| **Caution / High** | Industrial Amber | `#D97706` | `text-amber-800`, `bg-amber-50` | Thermal limits, busbar warnings |
+| **Nominal / Verified**| Smart Port Emerald | `#059669` | `text-nominal-emerald`, `bg-nominal-emerald-bg` | Verified evidence checkmarks, 0% contamination |
+| **Primary Typography**| Deep Quantum Navy Ink | `#0B1E36` | `text-psa-navy-dark` | Headings & high-precision telemetry metrics |
+| **Subtle Telemetry** | Tactical Muted Slate | `#5A6E85` | `text-psa-muted` | Timestamps, coordinates, MCP parameters |
 
 ---
 

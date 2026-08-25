@@ -7,39 +7,54 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Light Theme Tokens
-        light: {
-          bg: '#F8FAFC',        // Slate 50
-          card: '#FFFFFF',      // White
-          surface: '#F1F5F9',   // Slate 100
-          border: '#E2E8F0',    // Slate 200
-          hover: '#E2E8F0',
-          text: '#0F172A',      // Slate 900
-          muted: '#64748B',     // Slate 500
+        // PSA Singapore & Tuas Cyber-Maritime Light Theme Tokens
+        psa: {
+          navy: '#002B49',          // Authentic PSA Maritime Ultramarine
+          'navy-dark': '#0B1E36',   // High-contrast deep navy ink for text
+          'navy-light': '#E9F0F8',  // Soft maritime tint
+          canvas: '#F0F4FA',        // Anti-glare cool maritime canvas
+          surface: '#FFFFFF',       // Crisp white cards
+          border: '#D5E2EE',        // Precision micro-border
+          'border-focus': '#99BFDD',// Focused border
+          muted: '#5A6E85',         // Technical telemetry & timestamps
+          flame: '#E63946',         // PSA Signature Red Flame
+          'flame-dark': '#C92A37',  // Critical hover state
+          'flame-bg': '#FEF2F2',    // Critical alarm background
+          'flame-border': '#FECDD3',// Critical alarm border
         },
-        // Maritime Port Brand Tokens
-        port: {
-          cyan: '#0284C7',      // Sky 600
-          'cyan-glow': '#0EA5E9',
-          blue: '#2563EB',      // Blue 600
-          navy: '#0F172A',
+        // Tuas Mega-Port Autonomous Electric Tokens
+        tuas: {
+          teal: '#00C9A7',          // Electric AGV & Smart Green Port Teal
+          'teal-dark': '#00967D',   // Deep teal for high-contrast text
+          'teal-light': '#E6FBF7',  // Soft teal pod background
+          'teal-border': '#A7F3E2', // Glowing pod boundary
+          cyan: '#00B4D8',          // Laser SCADA Cyan
+          'cyan-dark': '#0284C7',   // Sky/Laser blue
+          'cyan-light': '#EBF9FC',  // Micro badge background
+          'cyan-border': '#BAE6FD', // Sky border
         },
-        // Industrial Status Tokens
+        // Operational Status Tokens
         hazard: {
-          red: '#DC2626',       // Red 600
-          'red-bg': '#FEF2F2',  // Red 50
-          'red-border': '#FECACA',
+          red: '#E63946',           // PSA Flame Red
+          'red-bg': '#FEF2F2',
+          'red-border': '#FECDD3',
         },
         caution: {
-          amber: '#D97706',     // Amber 600
-          'amber-bg': '#FFFBEB',// Amber 50
+          amber: '#D97706',         // High severity / thermal limit
+          'amber-bg': '#FFFBEB',
           'amber-border': '#FDE68A',
         },
         nominal: {
-          emerald: '#059669',   // Emerald 600
+          emerald: '#059669',       // Verified physical evidence / 0% contamination
           'emerald-bg': '#ECFDF5',
           'emerald-border': '#A7F3D0',
         },
+      },
+      boxShadow: {
+        'glow-teal': '0 0 16px rgba(0, 201, 167, 0.25)',
+        'glow-cyan': '0 0 16px rgba(0, 180, 216, 0.25)',
+        'glow-flame': '0 0 16px rgba(230, 57, 70, 0.25)',
+        'cyber-card': '0 2px 8px -2px rgba(0, 43, 73, 0.06), 0 1px 3px -1px rgba(0, 43, 73, 0.04)',
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],

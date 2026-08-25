@@ -171,17 +171,17 @@ export const AgentIsolationVisualizer: React.FC<AgentIsolationVisualizerProps> =
       </div>
 
       {/* Live Simulation Progress Banner */}
-      <div className="relative z-10 my-4 bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm font-mono text-xs space-y-2">
+      <div className="relative z-10 my-4 bg-white border border-psa-border rounded-xl p-3.5 shadow-cyber-card font-mono text-xs space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-slate-700 font-semibold">
-            <Sparkles className="w-4 h-4 text-sky-600 animate-pulse" />
-            <span>Live Triage Status: <span className="text-sky-700 font-bold">{activeStageText}</span></span>
+          <div className="flex items-center space-x-2 text-psa-navy-dark font-semibold">
+            <Sparkles className="w-4 h-4 text-tuas-teal animate-pulse" />
+            <span>Live Triage Status: <span className="text-tuas-cyan-dark font-bold">{activeStageText}</span></span>
           </div>
-          <span className="text-slate-500 font-bold">{progressPct}%</span>
+          <span className="text-psa-muted font-bold">{progressPct}%</span>
         </div>
-        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-psa-navy-light rounded-full overflow-hidden">
           <div
-            className="h-full bg-sky-600 rounded-full transition-all duration-500 shadow-sm"
+            className="h-full bg-gradient-to-r from-psa-navy via-tuas-cyan to-tuas-teal rounded-full transition-all duration-500 shadow-sm"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -192,38 +192,38 @@ export const AgentIsolationVisualizer: React.FC<AgentIsolationVisualizerProps> =
         
         {/* TOP NODE: COORDINATOR AGENT */}
         <div className={`w-full max-w-md bg-white border-2 rounded-2xl p-5 shadow-lg relative transition-all duration-500 ${
-          isSpawningAnimation ? 'border-sky-600 ring-4 ring-sky-500/20 scale-[1.02]' : 'border-sky-500 shadow-sky-500/10'
+          isSpawningAnimation ? 'border-tuas-teal ring-4 ring-tuas-teal/20 scale-[1.02]' : 'border-tuas-cyan shadow-glow-cyan'
         }`}>
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-sky-600 text-white font-mono font-bold text-[10px] px-3.5 py-0.5 rounded-full uppercase tracking-wider shadow">
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-psa-navy text-white font-mono font-bold text-[10px] px-3.5 py-0.5 rounded-full uppercase tracking-wider shadow">
             Topological Coordinator Node
           </div>
 
           <div className="flex items-start justify-between mt-1">
             <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-slate-50 rounded-xl border border-sky-200 text-sky-600 relative shadow-sm">
-                <Bot className="w-6 h-6" />
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+              <div className="p-2.5 bg-psa-navy-light rounded-xl border border-tuas-cyan/40 text-psa-navy relative shadow-sm">
+                <Bot className="w-6 h-6 text-tuas-cyan-dark" />
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-tuas-teal animate-ping" />
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 text-base">Coordinator Dispatch Node</h4>
-                <p className="text-xs text-slate-500 font-mono">
+                <h4 className="font-bold text-psa-navy-dark text-base">Coordinator Dispatch Node</h4>
+                <p className="text-xs text-psa-muted font-mono">
                   Queries Terminal Topology & Instantiates Sub-Agents
                 </p>
               </div>
             </div>
 
             <div className="text-right font-mono">
-              <span className="text-[10px] text-slate-400">Context Budget</span>
-              <div className="text-xs font-bold text-sky-700">512 / 8,000 tok</div>
+              <span className="text-[10px] text-psa-muted">Context Budget</span>
+              <div className="text-xs font-bold text-tuas-cyan-dark">512 / 8,000 tok</div>
             </div>
           </div>
 
-          <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
-            <span className="text-slate-600 flex items-center gap-1.5">
-              <Network className="w-3.5 h-3.5 text-sky-600" />
+          <div className="mt-3.5 pt-2.5 border-t border-psa-border flex items-center justify-between text-xs font-mono">
+            <span className="text-psa-muted flex items-center gap-1.5">
+              <Network className="w-3.5 h-3.5 text-tuas-cyan-dark" />
               <span>Assessing: Berth 2 & Sector A layout</span>
             </span>
-            <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+            <span className="text-tuas-teal-dark font-semibold text-xs bg-tuas-teal-light px-2 py-0.5 rounded border border-tuas-teal-border">
               2 Agents Dispatched
             </span>
           </div>
@@ -232,30 +232,30 @@ export const AgentIsolationVisualizer: React.FC<AgentIsolationVisualizerProps> =
         {/* ANIMATED LASER CONDUITS / PIPELINES */}
         <div className="w-full max-w-2xl h-16 relative flex items-center justify-around my-1">
           {/* Left Branch to Agent 1 */}
-          <div className="absolute left-1/4 top-0 bottom-0 w-0.5 bg-slate-300">
+          <div className="absolute left-1/4 top-0 bottom-0 w-0.5 bg-tuas-teal-border">
             {isPlaying && (
               <div 
-                className="w-2 h-7 bg-sky-500 rounded-full -left-[3px] absolute shadow-lg shadow-sky-500 animate-bounce"
+                className="w-2 h-7 bg-tuas-teal rounded-full -left-[3px] absolute shadow-lg shadow-tuas-teal animate-bounce"
                 style={{ animationDuration: '1.2s' }}
               />
             )}
           </div>
 
           {/* Right Branch to Agent 2 */}
-          <div className="absolute right-1/4 top-0 bottom-0 w-0.5 bg-slate-300">
+          <div className="absolute right-1/4 top-0 bottom-0 w-0.5 bg-tuas-cyan-border">
             {isPlaying && (
               <div 
-                className="w-2 h-7 bg-amber-500 rounded-full -left-[3px] absolute shadow-lg shadow-amber-500 animate-bounce"
+                className="w-2 h-7 bg-tuas-cyan rounded-full -left-[3px] absolute shadow-lg shadow-tuas-cyan animate-bounce"
                 style={{ animationDuration: '1.4s' }}
               />
             )}
           </div>
 
           {/* Scope Isolation Barrier Ribbon */}
-          <div className="z-20 bg-white/95 border border-sky-300 rounded-full px-4 py-1.5 flex items-center space-x-2 text-xs font-mono shadow-md backdrop-blur">
-            <Lock className="w-4 h-4 text-sky-600 animate-pulse" />
-            <span className="text-slate-700 font-medium">Context Isolation Barrier:</span>
-            <span className="text-emerald-700 font-bold">100% Strict Sandbox</span>
+          <div className="z-20 bg-white/95 border border-tuas-cyan-border rounded-full px-4 py-1.5 flex items-center space-x-2 text-xs font-mono shadow-md backdrop-blur">
+            <Lock className="w-4 h-4 text-tuas-teal animate-pulse" />
+            <span className="text-psa-navy-dark font-medium">Context Isolation Barrier:</span>
+            <span className="text-nominal-emerald font-bold">100% Strict Sandbox</span>
           </div>
         </div>
 

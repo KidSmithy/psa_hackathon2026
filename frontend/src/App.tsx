@@ -64,7 +64,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans">
+    <div className="bg-psa-canvas text-psa-navy-dark min-h-screen flex flex-col font-sans bg-grid-pattern">
       {/* Top Header */}
       <Header
         currentView={currentView}
