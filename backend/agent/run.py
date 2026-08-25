@@ -1,6 +1,6 @@
 """
-Entry point: runs the graph once against a sample raw alert stream and
-prints the result.
+Entry point: runs the graph once against every incident cluster currently
+sitting in the real Supabase incident_clusters table, and prints the result.
 
 Usage (from backend/, inside the venv):
     python -m agent.run
@@ -13,13 +13,9 @@ from agent.graph import build_graph
 from agent.stage1_bridge import get_incident_clusters
 from agent.tracing import get_langfuse_handler
 
-# Sample raw alert ids — matches the seeded Cluster A + Cluster B scenario in
-# backend/mcp/mock_data.py / backend/database_schema.md.
-SAMPLE_RAW_ALERTS = [f"ALT-{i:03d}" for i in range(1, 16)]
-
 
 async def main() -> None:
-    clusters = get_incident_clusters(SAMPLE_RAW_ALERTS)
+    clusters = get_incident_clusters()
     if not clusters:
         print("Stage 1 produced no clusters for this alert batch — nothing to investigate.")
         return

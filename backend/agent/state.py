@@ -11,8 +11,9 @@ import operator
 
 
 class OverallState(TypedDict):
-    # Stage 1 output — one entry per incident cluster, keyed by cluster_id.
-    # Shape matches mock_data.get_stage1_clusters() in backend/mcp/mock_data.py.
+    # Stage 1 output — one entry per incident cluster, keyed by cluster_id
+    # (e.g. "CLUSTER-A"). Shape matches stage1_bridge.get_incident_clusters(),
+    # which reads the real Supabase incident_clusters table.
     clusters: dict[str, dict[str, Any]]
 
     # Every investigator worker appends one finding here. operator.add lets

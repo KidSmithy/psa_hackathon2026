@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from agent.state import OverallState
 
-MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5.6-terra")
 
 SYSTEM_PROMPT = """You are the Correlation agent in a port terminal incident triage system.
 

@@ -16,16 +16,19 @@ from langgraph.types import Send
 
 from agent.state import OverallState
 
-# Which investigator node owns which cluster. Cluster_C and Cluster_D route
-# to investigators that exist as stubs today (see investigators/fleet_energy.py
-# and investigators/safety_sensor.py) — Stage 1 doesn't produce those cluster
-# ids yet either (backend/mcp/mock_data.py only defines Cluster_A/B), so this
-# map is future-proofed but currently only A/B will ever actually fire.
-CLUSTER_TO_INVESTIGATOR = {
-    "Cluster_A": "lane_investigator",
-    "Cluster_B": "power_investigator",
-    "Cluster_C": "fleet_energy_investigator",
-    "Cluster_D": "safety_sensor_investigator",
+# Which investigator node owns which cluster, keyed by the real
+# `assigned_agent` value from the incident_clusters table — this is the
+# actual routing decision already made by whoever seeded the database, not
+# something guessed here. Confirmed against all 4 seeded rows:
+#   CLUSTER-A -> Agent_1_LaneInvestigator   -> lane_investigator
+#   CLUSTER-B -> Agent_2_BCSSInvestigator   -> power_investigator
+#   CLUSTER-C -> Agent_3_FleetPowerInvestigator -> fleet_power_investigator
+#   CLUSTER-D -> Agent_1_LaneInvestigator   -> lane_investigator (same agent as A —
+#       a LiDAR-degraded safety stop on a lane is still this investigator's domain)
+AGENT_TO_INVESTIGATOR_NODE = {
+    "Agent_1_LaneInvestigator": "lane_investigator",
+    "Agent_2_BCSSInvestigator": "power_investigator",
+    "Agent_3_FleetPowerInvestigator": "fleet_power_investigator",
 }
 
 
@@ -38,9 +41,9 @@ def assign_investigators(state: OverallState) -> list[Send]:
     """Conditional-edge function: fans one Send() out per cluster."""
     sends = []
     for cluster_id, cluster in state["clusters"].items():
-        node_name = CLUSTER_TO_INVESTIGATOR.get(cluster_id)
+        node_name = AGENT_TO_INVESTIGATOR_NODE.get(cluster["assigned_agent"])
         if node_name is None:
-            continue  # unknown cluster type — no investigator assigned, skip rather than crash
+            continue  # unrecognized assigned_agent value — skip rather than crash
         sends.append(
             Send(
                 node_name,
