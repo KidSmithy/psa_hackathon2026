@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { AlertsClustersPage } from './pages/AlertsClustersPage';
-import { AgentSpawningPage } from './pages/AgentSpawningPage';
+import { ChatInterface } from './components/ChatInterface';
 import { RawAlert, IncidentClusterRow, ClusterWithAlerts } from './types';
 import { supabase } from './lib/supabase';
 import { FALLBACK_RAW_ALERTS, FALLBACK_INCIDENT_CLUSTERS } from './data/supabaseMockFallback';
@@ -68,7 +68,10 @@ export const App: React.FC = () => {
       {/* Top Header */}
       <Header
         currentView={currentView}
-        onBackToAlerts={() => setCurrentView('alerts')}
+        onBackToAlerts={() => {
+          setSelectedCluster(null);
+          setCurrentView('alerts');
+        }}
         totalAlertsCount={rawAlerts.length}
         totalClustersCount={clusters.length}
         isSupabaseLive={isSupabaseLive}
@@ -84,15 +87,14 @@ export const App: React.FC = () => {
             onRefresh={fetchData}
             onResolveIncident={handleResolveIncident}
           />
-        ) : selectedCluster ? (
-          <AgentSpawningPage
-            cluster={selectedCluster}
-            onBackToAlerts={() => setCurrentView('alerts')}
-          />
         ) : (
-          <div className="p-8 text-center text-slate-500 font-mono">
-            No incident selected.
-          </div>
+          <ChatInterface
+            selectedCluster={selectedCluster}
+            onBackToDocket={() => {
+              setSelectedCluster(null);
+              setCurrentView('alerts');
+            }}
+          />
         )}
       </main>
     </div>

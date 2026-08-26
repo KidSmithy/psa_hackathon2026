@@ -13,15 +13,13 @@ import {
   Lock, 
   Wrench, 
   Activity, 
-  Cpu, 
   Zap,
   ArrowLeft,
-  Clock,
   ShieldCheck,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { DocketItem } from '../types';
+import { DocketItem, ClusterWithAlerts } from '../types';
 import { INITIAL_DOCKETS } from '../data/mockData';
 
 interface ChatMessage {
@@ -45,16 +43,22 @@ interface ChatMessage {
 }
 
 interface ChatInterfaceProps {
+  selectedCluster?: ClusterWithAlerts | null;
   onBackToDocket: () => void;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) => {
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
+  selectedCluster, 
+  onBackToDocket 
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg-welcome',
       sender: 'assistant',
       timestamp: '20:45:00',
-      text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below and press **Enter** to watch the multi-agent spawning and triage animation.',
+      text: selectedCluster
+        ? `👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nSelected incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\nClick **"Trigger Spawn Demo"** or press **Enter** below to launch the isolated multi-agent triage and investigation sequence.`
+        : '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
     }
   ]);
 
@@ -63,7 +67,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
   const [dispatchedActions, setDispatchedActions] = useState<Record<string, boolean>>({});
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
 
+  const isSimulatingRef = useRef<boolean>(false);
+  const hasAutoTriggeredRef = useRef<string | null>(null);
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const clearAllTimeouts = () => {
+    timeoutsRef.current.forEach(t => clearTimeout(t));
+    timeoutsRef.current = [];
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,12 +85,46 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
     scrollToBottom();
   }, [messages, isSimulating]);
 
-  const triggerAgentSpawningSimulation = (customQuery?: string, targetCluster: 'Cluster A' | 'Cluster B' = 'Cluster A') => {
-    if (isSimulating) return;
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      clearAllTimeouts();
+    };
+  }, []);
+
+  // Auto-trigger exactly ONCE per selected cluster
+  useEffect(() => {
+    if (selectedCluster && hasAutoTriggeredRef.current !== selectedCluster.cluster_id) {
+      hasAutoTriggeredRef.current = selectedCluster.cluster_id;
+      const isBCSS = selectedCluster.cluster_id.includes('B') || 
+                     selectedCluster.cluster_id.includes('0008') || 
+                     selectedCluster.primary_location.includes('BCSS');
+      
+      triggerAgentSpawningSimulation(
+        `⚡ Run AI incident triage & spawn investigator agents for ${selectedCluster.cluster_id}: ${selectedCluster.name}`,
+        isBCSS ? 'Cluster B' : 'Cluster A',
+        selectedCluster
+      );
+    }
+  }, [selectedCluster]);
+
+  const triggerAgentSpawningSimulation = (
+    customQuery?: string, 
+    targetCluster: 'Cluster A' | 'Cluster B' = 'Cluster A',
+    customClusterObj?: ClusterWithAlerts | null
+  ) => {
+    // Synchronous mutex lock to prevent duplicate runs
+    if (isSimulatingRef.current) return;
+    isSimulatingRef.current = true;
     setIsSimulating(true);
 
     const isClusterA = targetCluster === 'Cluster A';
-    const clusterLabel = isClusterA ? 'Cluster A: Transfer Lane 7 Bottleneck' : 'Cluster B: BCSS-02 Charger Trip';
+    const clusterLabel = customClusterObj 
+      ? `${customClusterObj.cluster_id}: ${customClusterObj.name}`
+      : isClusterA 
+        ? 'Cluster A: Transfer Lane 7 Bottleneck' 
+        : 'Cluster B: BCSS-02 Charger Trip';
+
     const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const userMsg: ChatMessage = {
@@ -89,16 +135,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
     };
     setMessages(prev => [...prev, userMsg]);
 
-    setTimeout(() => {
+    // Step 1: Coordinator Stage
+    const t1 = setTimeout(() => {
       const coordMsg: ChatMessage = {
         id: `coord-${Date.now()}`,
         sender: 'assistant',
         timestamp: timeNow(),
-        text: `🤖 **Stage 1: Coordinator Assessment Activated**\n- Ingested **142 field alerts** from SCADA message bus.\n- Deterministic spatial-temporal filter dropped 116 baseline noise events (**81.7% zero-token savings**).\n- Coordinator evaluated Berth 2 / Sector A topology graph $\\rightarrow$ **Spawning dedicated investigator sub-agent** in an isolated runtime sandbox.`
+        text: `🤖 **Stage 1: Coordinator Assessment Activated**\n- Ingested **142 field alerts** from SCADA message bus.\n- Deterministic spatial-temporal filter dropped 116 baseline noise events (**81.7% zero-token savings**).\n- Coordinator evaluated ${customClusterObj?.primary_location || (isClusterA ? 'Lane 7 & Berth 2' : 'Station BCSS-02')} topology graph $\\rightarrow$ **Spawning dedicated investigator sub-agent** in an isolated runtime sandbox.`
       };
       setMessages(prev => [...prev, coordMsg]);
 
-      setTimeout(() => {
+      // Step 2: Sub-Agent Sandbox Pod & Token Budget
+      const t2 = setTimeout(() => {
         const spawnMsgId = `spawn-${Date.now()}`;
         const spawnMsg: ChatMessage = {
           id: spawnMsgId,
@@ -110,9 +158,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
             stageText: isClusterA 
               ? 'Agent 1 (Lane Investigator) instantiated with exclusive PID 8841' 
               : 'Agent 2 (Infrastructure Investigator) instantiated with exclusive PID 8842',
-            agentName: isClusterA ? 'Agent 1: Lane & Actuator Investigator' : 'Agent 2: Infrastructure & Power Investigator',
+            agentName: customClusterObj?.assigned_agent || (isClusterA ? 'Agent 1: Lane & Actuator Investigator' : 'Agent 2: Infrastructure & Power Investigator'),
             agentRole: isClusterA ? 'Vehicle Kinematics, Queue Order & Actuators' : 'Power Distribution & DC Busbar Thermals',
-            cluster: targetCluster,
+            cluster: customClusterObj?.cluster_id || targetCluster,
             tokensUsed: isClusterA ? 1140 : 1480,
             maxTokens: 2000,
             activeTool: isClusterA 
@@ -133,33 +181,43 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
         };
         setMessages(prev => [...prev, spawnMsg]);
 
-        setTimeout(() => {
+        // Step 3: Synthesized Review Docket
+        const t3 = setTimeout(() => {
           const docketData = isClusterA ? INITIAL_DOCKETS[0] : INITIAL_DOCKETS[1];
           const docketMsg: ChatMessage = {
             id: `docket-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
             text: `📋 **Stage 3 & 4 Complete:** Multi-agent investigation synthesized into a consolidated Human Review Docket backed by **100% verified hardware proof**.`,
-            docket: docketData
+            docket: {
+              ...docketData,
+              title: customClusterObj ? customClusterObj.name : docketData.title,
+              clusterId: customClusterObj ? customClusterObj.cluster_id : docketData.clusterId,
+            }
           };
           setMessages(prev => [...prev, docketMsg]);
+          isSimulatingRef.current = false;
           setIsSimulating(false);
         }, 1800);
 
+        timeoutsRef.current.push(t3);
       }, 1000);
 
+      timeoutsRef.current.push(t2);
     }, 600);
+
+    timeoutsRef.current.push(t1);
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isSimulating) return;
+    if (!inputValue.trim() || isSimulatingRef.current) return;
 
     const lower = inputValue.toLowerCase();
     const currentText = inputValue;
     setInputValue('');
 
-    const targetCluster = (lower.includes('bcss') || lower.includes('cluster b') || lower.includes('charger') || lower.includes('thermal'))
+    const targetCluster = (lower.includes('bcss') || lower.includes('cluster b') || lower.includes('charger') || lower.includes('thermal') || lower.includes('0008'))
       ? 'Cluster B'
       : 'Cluster A';
 
@@ -169,7 +227,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
   const handleDispatchAction = (actionText: string) => {
     setDispatchedActions(prev => ({ ...prev, [actionText]: true }));
 
-    setTimeout(() => {
+    const t = setTimeout(() => {
       const confirmMsg: ChatMessage = {
         id: `dispatch-confirm-${Date.now()}`,
         sender: 'assistant',
@@ -178,59 +236,86 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
       };
       setMessages(prev => [...prev, confirmMsg]);
     }, 500);
+
+    timeoutsRef.current.push(t);
   };
 
   const toggleLogExpand = (msgId: string) => {
     setExpandedLogs(prev => ({ ...prev, [msgId]: !prev[msgId] }));
   };
 
+  const handleReset = () => {
+    clearAllTimeouts();
+    isSimulatingRef.current = false;
+    hasAutoTriggeredRef.current = null;
+    setIsSimulating(false);
+    setMessages([
+      {
+        id: 'msg-welcome',
+        sender: 'assistant',
+        timestamp: '20:45:00',
+        text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+      }
+    ]);
+    setDispatchedActions({});
+  };
+
   return (
-    <div className="flex flex-col h-[calc(100vh-6.5rem)] max-w-4xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden font-sans">
+    <div className="flex flex-col h-[calc(100vh-6.5rem)] max-w-5xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden font-sans">
       
-      {/* Copilot Header */}
-      <div className="px-6 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between">
+      {/* Top Copilot Header Bar */}
+      <div className="px-6 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <button
             onClick={onBackToDocket}
-            className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-700 shadow-sm transition-colors flex items-center space-x-1.5 text-xs font-mono font-bold"
-            title="Return to Review Docket"
+            className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-700 shadow-sm transition-colors flex items-center space-x-1.5 text-xs font-mono font-bold whitespace-nowrap active:scale-95"
+            title="Return to Alerts & Clusters"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Back to Docket</span>
+            <span>Back to Docket</span>
           </button>
           
           <div>
             <div className="flex items-center space-x-2">
-              <h2 className="text-sm font-bold text-slate-900 tracking-wide">
+              <h2 className="text-sm font-bold text-slate-900 tracking-wide font-sans">
                 PSA INCIDENT COPILOT
               </h2>
-              <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold">
+              <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
                 SPAWNING VISUALIZER
               </span>
             </div>
+            <p className="text-[11px] text-slate-500 font-mono hidden sm:block">
+              Type any query below to trigger multi-agent spawning & triage
+            </p>
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            setMessages([
-              {
-                id: 'msg-welcome',
-                sender: 'assistant',
-                timestamp: '20:45:00',
-                text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below and press **Enter** to watch the multi-agent spawning and triage animation.',
-              }
-            ]);
-            setDispatchedActions({});
-          }}
-          className="p-2 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-xl transition-colors shadow-sm"
-          title="Reset Conversation"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
+        {/* Action Trigger Buttons */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => triggerAgentSpawningSimulation(undefined, 'Cluster A', selectedCluster)}
+            disabled={isSimulating}
+            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition-all shadow-sm whitespace-nowrap ${
+              isSimulating
+                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 active:scale-95'
+            }`}
+          >
+            <Zap className={`w-3.5 h-3.5 ${isSimulating ? 'animate-spin' : 'animate-pulse'}`} />
+            <span>{isSimulating ? 'Spawning Agents...' : 'Trigger Spawn Demo'}</span>
+          </button>
+
+          <button
+            onClick={handleReset}
+            className="p-2 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-xl transition-colors shadow-sm"
+            title="Reset Conversation"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Messages Feed */}
+      {/* Messages Feed Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/40">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
@@ -251,6 +336,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
               </div>
 
               <div className={`space-y-3 max-w-[88%] ${isUser ? 'items-end' : 'items-start'}`}>
+                {/* Text Bubble */}
                 {msg.text && (
                   <div
                     className={`p-4 rounded-2xl text-xs leading-relaxed font-sans shadow-sm ${
@@ -266,8 +352,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                   </div>
                 )}
 
+                {/* Sub-Agent Spawning Sandbox Card */}
                 {msg.isSpawningAnimation && msg.spawningProgress && (
-                  <div className="bg-white border-2 border-sky-300 rounded-2xl p-5 shadow-md space-y-3.5 font-mono text-xs w-full">
+                  <div className="bg-white border-2 border-sky-300 rounded-2xl p-5 shadow-md space-y-3.5 font-mono text-xs w-full animate-fadeIn">
                     <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                       <div className="flex items-center space-x-2.5">
                         <div className="p-2 bg-sky-50 rounded-xl text-sky-600 border border-sky-200 shadow-sm">
@@ -285,6 +372,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </span>
                     </div>
 
+                    {/* Token Budget Meter */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
                       <div className="flex justify-between text-[11px]">
                         <span className="text-slate-600 flex items-center gap-1">
@@ -303,6 +391,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                       </div>
                     </div>
 
+                    {/* Active MCP Execution Ticker */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
                         <Activity className="w-3 h-3 text-emerald-600" />
@@ -312,11 +401,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
                         {msg.spawningProgress.activeTool}
                       </div>
                     </div>
+
+                    {/* Expandable Logs */}
+                    <div className="pt-1">
+                      <button
+                        onClick={() => toggleLogExpand(msg.id)}
+                        className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1"
+                      >
+                        <span>Diagnostic Schema Logs ({msg.spawningProgress.logs.length})</span>
+                        {expandedLogs[msg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {expandedLogs[msg.id] && (
+                        <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px]">
+                          {msg.spawningProgress.logs.map((log, i) => (
+                            <div key={i} className="text-slate-700 py-0.5">
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
+                {/* Final Synthesized Human Review Docket Card */}
                 {msg.docket && (
-                  <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full">
+                  <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full animate-fadeIn">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                       <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded uppercase ${
                         msg.docket.severity === 'CRITICAL' 
@@ -403,14 +514,42 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBackToDocket }) 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
+      {/* Quick Spawning Triggers Chips */}
+      <div className="px-6 py-2.5 border-t border-slate-100 bg-slate-50/80 flex items-center gap-2 overflow-x-auto">
+        <span className="text-[10px] font-mono text-slate-400 uppercase font-bold flex-shrink-0">
+          QUICK SPAWNING TRIGGERS:
+        </span>
+        <button
+          onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (Cluster A)', 'Cluster A')}
+          disabled={isSimulating}
+          className="text-xs font-mono bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+        >
+          🔍 Lane 7 Jam (Cluster A)
+        </button>
+        <button
+          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (Cluster B)', 'Cluster B')}
+          disabled={isSimulating}
+          className="text-xs font-mono bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+        >
+          ⚡ BCSS-02 Charger Trip (Cluster B)
+        </button>
+        <button
+          onClick={() => triggerAgentSpawningSimulation('Simulate full multi-agent triage and context isolation', 'Cluster A')}
+          disabled={isSimulating}
+          className="text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+        >
+          ⚡ Full Spawning Demo
+        </button>
+      </div>
+
+      {/* Message Input Box */}
       <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-white">
-        <div className="flex items-center space-x-2 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-sky-500 focus-within:border-sky-500 shadow-inner">
+        <div className="flex items-center space-x-2 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-sky-500 focus-within:border-sky-500 shadow-inner">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type query and press Enter to trigger agent spawning..."
+            placeholder="Type any message (e.g. 'Investigate Lane 7' or 'Test agent spawning') and press Enter..."
             className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans"
             disabled={isSimulating}
           />
