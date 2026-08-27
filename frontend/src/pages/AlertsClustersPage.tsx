@@ -15,7 +15,8 @@ import {
   Activity,
   ChevronDown,
   ChevronUp,
-  Clock
+  Clock,
+  Compass
 } from 'lucide-react';
 import { RawAlert, IncidentClusterRow, ClusterWithAlerts, SeverityLevel } from '../types';
 
@@ -25,6 +26,8 @@ interface AlertsClustersPageProps {
   isLoading: boolean;
   onRefresh: () => void;
   onResolveIncident: (cluster: ClusterWithAlerts) => void;
+  selectedClusterId?: string | null;
+  onClearSelectedCluster?: () => void;
 }
 
 export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
@@ -33,12 +36,27 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
   isLoading,
   onRefresh,
   onResolveIncident,
+  selectedClusterId,
+  onClearSelectedCluster,
 }) => {
   const [activeTab, setActiveTab] = useState<'clusters' | 'allAlerts'>('clusters');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('ALL');
   const [selectedLocation, setSelectedLocation] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [expandedClusterIds, setExpandedClusterIds] = useState<Record<string, boolean>>({});
+  const [expandedClusterIds, setExpandedClusterIds] = useState<Record<string, boolean>>(() => {
+    if (selectedClusterId) {
+      return { [selectedClusterId]: true };
+    }
+    return {};
+  });
+
+  // Auto-expand and switch to clusters tab if selectedClusterId changes
+  React.useEffect(() => {
+    if (selectedClusterId) {
+      setActiveTab('clusters');
+      setExpandedClusterIds(prev => ({ ...prev, [selectedClusterId]: true }));
+    }
+  }, [selectedClusterId]);
 
   const toggleExpandCluster = (id: string) => {
     setExpandedClusterIds(prev => ({ ...prev, [id]: !prev[id] }));
@@ -298,6 +316,24 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
       {/* VIEW 1: 1 CARD PER ROW (EXPANDED HORIZONTAL ROWS) */}
       {activeTab === 'clusters' && (
         <div className="space-y-4">
+          {/* Focused Incident Notice if arriving from Map */}
+          {selectedClusterId && (
+            <div className="bg-sky-50 border-2 border-sky-400 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 font-mono text-xs shadow-sm">
+              <div className="flex items-center space-x-2.5 text-sky-950 font-bold">
+                <Compass className="w-4 h-4 text-sky-600 animate-spin-slow" />
+                <span>Focused from AGV Yard Map: <strong className="bg-sky-200/80 text-sky-950 px-2 py-0.5 rounded border border-sky-300">{selectedClusterId}</strong></span>
+              </div>
+              {onClearSelectedCluster && (
+                <button
+                  onClick={onClearSelectedCluster}
+                  className="text-[11px] font-bold text-sky-800 hover:text-sky-950 bg-sky-100 hover:bg-sky-200 px-3 py-1 rounded-lg border border-sky-300 transition-all active:scale-95"
+                >
+                  Show All Incidents / Reset Focus
+                </button>
+              )}
+            </div>
+          )}
+
           {filteredClusters.length === 0 ? (
             <div className="bg-white border-2 border-slate-300 rounded-2xl p-12 text-center text-slate-500 font-mono space-y-2">
               <ShieldAlert className="w-8 h-8 text-slate-400 mx-auto" />
@@ -308,12 +344,15 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
             filteredClusters.map((cluster) => {
               const isExpanded = expandedClusterIds[cluster.cluster_id];
               const isCritical = cluster.highestSeverity === 'CRITICAL';
+              const isFocused = cluster.cluster_id === selectedClusterId;
 
               return (
                 <div
                   key={cluster.cluster_id}
                   className={`bg-white border-2 rounded-2xl p-5 md:p-6 shadow-md transition-all duration-200 hover:shadow-xl w-full space-y-4 ${
-                    isCritical 
+                    isFocused
+                      ? 'ring-4 ring-sky-400 border-sky-500 shadow-xl'
+                      : isCritical 
                       ? 'border-l-8 border-l-psa-flame border-t-slate-200 border-r-slate-200 border-b-slate-200' 
                       : 'border-l-8 border-l-psa-navy border-t-slate-200 border-r-slate-200 border-b-slate-200'
                   }`}
@@ -328,6 +367,11 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                         <span className="font-mono font-black text-xs bg-psa-navy text-white px-2.5 py-1 rounded-lg shadow-sm whitespace-nowrap flex-shrink-0">
                           {cluster.cluster_id}
                         </span>
+                        {isFocused && (
+                          <span className="font-mono font-black text-[10px] bg-sky-100 text-sky-800 border border-sky-300 px-2 py-0.5 rounded-lg">
+                            FOCUSED FROM MAP
+                          </span>
+                        )}
                         <span className="text-xs font-mono text-psa-navy-dark font-bold flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-300 whitespace-nowrap flex-shrink-0">
                           <MapPin className="w-3.5 h-3.5 text-tuas-cyan-dark" />
                           <span>{cluster.primary_location}</span>
