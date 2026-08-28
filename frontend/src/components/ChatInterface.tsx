@@ -17,10 +17,22 @@ import {
   ArrowLeft,
   ShieldCheck,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  X,
+  Edit3,
+  XCircle,
+  AlertTriangle,
+  ArrowRightCircle,
+  Sliders
 } from 'lucide-react';
 import { DocketItem, ClusterWithAlerts } from '../types';
 import { INITIAL_DOCKETS } from '../data/mockData';
+
+interface ActionReviewState {
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
+  reason?: string;
+  overrideText?: string;
+}
 
 interface ChatMessage {
   id: string;
@@ -64,13 +76,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const [inputValue, setInputValue] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [dispatchedActions, setDispatchedActions] = useState<Record<string, boolean>>({});
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+
+  // Human-in-the-loop Action States
+  const [actionStates, setActionStates] = useState<Record<string, ActionReviewState>>({});
+  const [activeFormMode, setActiveFormMode] = useState<Record<string, 'reject' | 'override' | null>>({});
+  const [tempInput, setTempInput] = useState<Record<string, string>>({});
 
   const isSimulatingRef = useRef<boolean>(false);
   const hasAutoTriggeredRef = useRef<string | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const presetRejectionReasons = [
+    'Crew engaged on Berth 4 priority',
+    'Hardware false positive / nominal',
+    'Alternative bypass route preferred',
+    'Already mitigated manually'
+  ];
 
   const clearAllTimeouts = () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
@@ -83,7 +106,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isSimulating]);
+  }, [messages, isSimulating, activeFormMode]);
 
   // Clean up timeouts on unmount
   useEffect(() => {
@@ -108,6 +131,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   }, [selectedCluster]);
 
+  const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   const triggerAgentSpawningSimulation = (
     customQuery?: string, 
     targetCluster: 'Cluster A' | 'Cluster B' = 'Cluster A',
@@ -124,8 +149,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       : isClusterA 
         ? 'Cluster A: Transfer Lane 7 Bottleneck' 
         : 'Cluster B: BCSS-02 Charger Trip';
-
-    const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -209,6 +232,105 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     timeoutsRef.current.push(t1);
   };
 
+  // -------------------------------------------------------------
+  // Simulated Agent Re-Plan Flow upon Operator Rejection
+  // -------------------------------------------------------------
+  const triggerAgentReplanSimulation = (
+    rejectedAction: string,
+    reason: string,
+    docketTitle: string
+  ) => {
+    if (isSimulatingRef.current) return;
+    isSimulatingRef.current = true;
+    setIsSimulating(true);
+
+    const userMsg: ChatMessage = {
+      id: `replan-user-${Date.now()}`,
+      sender: 'user',
+      timestamp: timeNow(),
+      text: `❌ **[HUMAN-IN-THE-LOOP OVERRIDE]** Rejected recommendation:\n*"${rejectedAction}"*\n\n📝 **Operator Stated Reason:** ${reason}`,
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    // Step 1: Agent Re-planning Acknowledgment
+    const t1 = setTimeout(() => {
+      const replanAckMsg: ChatMessage = {
+        id: `replan-ack-${Date.now()}`,
+        sender: 'assistant',
+        timestamp: timeNow(),
+        text: `🔄 **Operator Feedback Ingested: Re-planning Triggered**\n- Human constraint recorded: *"${reason}"*.\n- Coordinator updating topological graph & querying alternative MCP resolution pathways...`
+      };
+      setMessages(prev => [...prev, replanAckMsg]);
+
+      // Step 2: Dynamic Alternative Tool Query Animation
+      const t2 = setTimeout(() => {
+        const replanSpawnMsg: ChatMessage = {
+          id: `replan-spawn-${Date.now()}`,
+          sender: 'assistant',
+          timestamp: timeNow(),
+          isSpawningAnimation: true,
+          spawningProgress: {
+            stage: 3,
+            stageText: 'Agent 1 (Lane Investigator) exploring Lane 6 bypass & pressure purge cycles',
+            agentName: 'Agent 1: Lane & Actuator Investigator',
+            agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
+            cluster: 'Cluster A (Revision 2)',
+            tokensUsed: 1620,
+            maxTokens: 2000,
+            activeTool: 'mcp-terminal-telemetry::get_alternate_bypass_routing(from=Lane-07, via=Lane-06)',
+            logs: [
+              `⚠️ Discarded original constraint path: "${rejectedAction}"`,
+              '🗺️ Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
+              '🔄 Automated hydraulic back-pressure cycle simulated: 3x pulses @ 290 bar',
+              '✅ Secondary resolution docket generated with zero human crew dependency'
+            ]
+          }
+        };
+        setMessages(prev => [...prev, replanSpawnMsg]);
+
+        // Step 3: Revised Docket Delivery (Rev. 2)
+        const t3 = setTimeout(() => {
+          const revisedDocket: DocketItem = {
+            id: 'DOCKET-A-REV2',
+            clusterId: 'Cluster A',
+            title: `${docketTitle} (REVISED PLAN - REV. 2)`,
+            severity: 'HIGH',
+            impact: 'Quay Crane QC-03 starvation mitigated via automated Lane 6 bypass.',
+            rootCause: 'Mechanical twistlock binding on lead AGV-104 isolated; alternate bypass enabled.',
+            physicalEvidence: [
+              { text: 'Lane 6 buffer verified clear (0 queued vehicles, 100% capacity available).', verified: true, timestamp: timeNow() },
+              { text: 'Automated hydraulic relief pulse sequence verified safe for remote triggering.', verified: true, timestamp: timeNow() }
+            ],
+            plcRegisters: [
+              { code: '0x7E1_PURGE', name: 'AUTO_RELIEF_PULSE_SEQ', description: 'Remote high-frequency solenoid oscillation', category: 'Actuator', status: 'READY_TO_EXECUTE' }
+            ],
+            recommendedActions: [
+              'Execute automated hydraulic back-pressure purge cycle (3x pulses @ 290 bar) on AGV-104.',
+              'Dynamic TOS reroute: Authorize AGV-109 and AGV-112 via Lane 6 bypass to Quay Crane QC-03 immediately.'
+            ]
+          };
+
+          const revisedDocketMsg: ChatMessage = {
+            id: `revised-docket-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            text: `✨ **Revised Resolution Docket Synthesized (Rev. 2):**\nIncorporated your operational constraints. You can now authorize or adjust the alternative bypass actions below.`,
+            docket: revisedDocket
+          };
+          setMessages(prev => [...prev, revisedDocketMsg]);
+          isSimulatingRef.current = false;
+          setIsSimulating(false);
+        }, 1600);
+
+        timeoutsRef.current.push(t3);
+      }, 900);
+
+      timeoutsRef.current.push(t2);
+    }, 500);
+
+    timeoutsRef.current.push(t1);
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isSimulatingRef.current) return;
@@ -224,20 +346,68 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     triggerAgentSpawningSimulation(currentText, targetCluster);
   };
 
-  const handleDispatchAction = (actionText: string) => {
-    setDispatchedActions(prev => ({ ...prev, [actionText]: true }));
+  // Handle Authorize Action
+  const handleAuthorizeAction = (actionText: string) => {
+    setActionStates(prev => ({
+      ...prev,
+      [actionText]: { status: 'ACCEPTED' }
+    }));
+    setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
 
     const t = setTimeout(() => {
       const confirmMsg: ChatMessage = {
         id: `dispatch-confirm-${Date.now()}`,
         sender: 'assistant',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        text: `🚀 **Operational Action Dispatched & Logged**\n- **Authorized Action:** "${actionText}"\n- **Field Unit:** Tuas Sector A Mobile Mechanical Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **Dispatched (Field ETA: 3m 30s)**`
+        timestamp: timeNow(),
+        text: `🚀 **Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
       };
       setMessages(prev => [...prev, confirmMsg]);
-    }, 500);
+    }, 400);
 
     timeoutsRef.current.push(t);
+  };
+
+  // Handle Reject Action -> Trigger Re-plan
+  const handleConfirmRejectAction = (actionText: string, docketTitle: string) => {
+    const reason = tempInput[actionText]?.trim() || 'Rejected by Terminal Supervisor';
+    setActionStates(prev => ({
+      ...prev,
+      [actionText]: { status: 'REJECTED', reason }
+    }));
+    setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
+
+    triggerAgentReplanSimulation(actionText, reason, docketTitle);
+  };
+
+  // Handle Override Action
+  const handleConfirmOverrideAction = (actionText: string) => {
+    const overrideText = tempInput[actionText]?.trim() || actionText;
+    setActionStates(prev => ({
+      ...prev,
+      [actionText]: { status: 'OVERRIDDEN', overrideText }
+    }));
+    setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
+
+    const t = setTimeout(() => {
+      const overrideConfirmMsg: ChatMessage = {
+        id: `override-confirm-${Date.now()}`,
+        sender: 'assistant',
+        timestamp: timeNow(),
+        text: `✏️ **Manual Operator Override Dispatched**\n- **Original Plan:** "${actionText}"\n- **Supervisor Custom Directive:** *"${overrideText}"*\n- **Execution Channel:** Field Mobile Terminal & TOS Priority Queue\n- **Status:** **OVERRIDDEN COMMAND EXECUTED**`
+      };
+      setMessages(prev => [...prev, overrideConfirmMsg]);
+    }, 400);
+
+    timeoutsRef.current.push(t);
+  };
+
+  const handleResetAction = (actionText: string) => {
+    setActionStates(prev => ({
+      ...prev,
+      [actionText]: { status: 'PENDING' }
+    }));
+    setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
+    setTempInput(prev => ({ ...prev, [actionText]: '' }));
   };
 
   const toggleLogExpand = (msgId: string) => {
@@ -257,7 +427,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
       }
     ]);
-    setDispatchedActions({});
+    setActionStates({});
+    setActiveFormMode({});
+    setTempInput({});
   };
 
   return (
@@ -281,11 +453,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 PSA INCIDENT COPILOT
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
-                SPAWNING VISUALIZER
+                SPAWNING & HUMAN GOVERNANCE
               </span>
             </div>
             <p className="text-[11px] text-slate-500 font-mono hidden sm:block">
-              Type any query below to trigger multi-agent spawning & triage
+              Type any query below to trigger multi-agent spawning, triage, or test Reject/Override replanning
             </p>
           </div>
         </div>
@@ -380,7 +552,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                           <span>Isolated Context Sandbox:</span>
                         </span>
                         <span className="font-bold text-sky-700">
-                          {msg.spawningProgress.tokensUsed} / {msg.spawningProgress.maxTokens} tokens (57%)
+                          {msg.spawningProgress.tokensUsed} / {msg.spawningProgress.maxTokens} tokens ({Math.round((msg.spawningProgress.tokensUsed / msg.spawningProgress.maxTokens) * 100)}%)
                         </span>
                       </div>
                       <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -425,7 +597,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   </div>
                 )}
 
-                {/* Final Synthesized Human Review Docket Card */}
+                {/* Final Synthesized Human Review Docket Card with Full Human-in-the-loop Governance */}
                 {msg.docket && (
                   <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full animate-fadeIn">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -469,37 +641,223 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 space-y-2">
-                      <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
-                        <Wrench className="w-4 h-4 text-sky-600" />
-                        <span>AUTHORIZE ACTION DISPATCH</span>
+                    {/* Human-in-the-Loop Action Controls (Authorize / Reject / Override) */}
+                    <div className="pt-2 border-t border-slate-100 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
+                          <Wrench className="w-4 h-4 text-sky-600" />
+                          <span>HUMAN GOVERNANCE DISPATCH</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">Select Action</span>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-3 font-mono">
                         {msg.docket.recommendedActions.map((action: string, idx: number) => {
-                          const isDispatched = dispatchedActions[action];
+                          const state = actionStates[action] || { status: 'PENDING' };
+                          const mode = activeFormMode[action] || null;
+                          const isAccepted = state.status === 'ACCEPTED';
+                          const isRejected = state.status === 'REJECTED';
+                          const isOverridden = state.status === 'OVERRIDDEN';
+
                           return (
-                            <button
+                            <div
                               key={idx}
-                              onClick={() => handleDispatchAction(action)}
-                              disabled={isDispatched}
-                              className={`w-full p-3 rounded-xl text-xs font-mono font-bold flex items-center justify-between transition-all ${
-                                isDispatched
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
-                                  : 'bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-600/20 active:scale-[0.99]'
+                              className={`p-3.5 rounded-xl border space-y-2.5 transition-all ${
+                                isAccepted
+                                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                                  : isRejected
+                                  ? 'bg-rose-50/60 border-rose-200 text-rose-900'
+                                  : isOverridden
+                                  ? 'bg-amber-50/60 border-amber-200 text-amber-950'
+                                  : 'bg-slate-50 border-slate-200 text-slate-800'
                               }`}
                             >
-                              <span className="text-left font-medium">{idx + 1}. {action}</span>
-                              {isDispatched ? (
-                                <span className="flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold">
-                                  <Check className="w-3 h-3" /> DISPATCHED
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 bg-sky-700 px-2.5 py-1 rounded text-[10px]">
-                                  AUTHORIZE <ArrowRight className="w-3 h-3" />
-                                </span>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="text-xs font-medium leading-relaxed">
+                                  <span className="font-bold text-sky-700 mr-1.5">Action #{idx + 1}:</span>
+                                  {action}
+                                </div>
+                                {state.status !== 'PENDING' && (
+                                  <button
+                                    onClick={() => handleResetAction(action)}
+                                    className="text-[10px] text-slate-400 hover:text-slate-700 flex items-center gap-0.5 underline font-bold"
+                                    title="Reset decision"
+                                  >
+                                    <RotateCcw className="w-3 h-3" /> Reset
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* State Badges */}
+                              {isAccepted && (
+                                <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1.5 rounded-lg">
+                                  <span className="flex items-center gap-1.5">
+                                    <Check className="w-4 h-4" /> AUTHORIZED & DISPATCHED
+                                  </span>
+                                  <span className="text-[10px] font-mono">WO-88219</span>
+                                </div>
                               )}
-                            </button>
+
+                              {isRejected && (
+                                <div className="text-xs space-y-1 text-rose-800 bg-rose-100/70 px-3 py-2 rounded-lg">
+                                  <div className="flex items-center gap-1.5 font-bold">
+                                    <XCircle className="w-4 h-4 text-rose-600" /> REJECTED (RE-PLANNING TRIGGERED)
+                                  </div>
+                                  {state.reason && (
+                                    <div className="text-[11px] text-rose-700 italic pl-5">
+                                      Reason: "{state.reason}"
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {isOverridden && (
+                                <div className="text-xs space-y-1 text-amber-900 bg-amber-100/70 px-3 py-2 rounded-lg">
+                                  <div className="flex items-center gap-1.5 font-bold">
+                                    <Edit3 className="w-4 h-4 text-amber-700" /> MANUAL OVERRIDE DISPATCHED
+                                  </div>
+                                  {state.overrideText && (
+                                    <div className="text-[11px] font-semibold text-amber-950 bg-white/80 p-1.5 rounded border border-amber-200 pl-2">
+                                      Directive: "{state.overrideText}"
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Inline Rejection Form */}
+                              {mode === 'reject' && (
+                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2 animate-fadeIn">
+                                  <div className="flex items-center justify-between text-xs font-bold text-rose-800">
+                                    <span className="flex items-center gap-1">
+                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                      Select Reason to Trigger Agent Re-Plan
+                                    </span>
+                                    <button
+                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                      className="text-slate-400 hover:text-slate-600"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-1">
+                                    {presetRejectionReasons.map((preset, pIdx) => (
+                                      <button
+                                        key={pIdx}
+                                        type="button"
+                                        onClick={() => setTempInput(prev => ({ ...prev, [action]: preset }))}
+                                        className="text-[10px] bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 px-2 py-0.5 rounded transition-colors"
+                                      >
+                                        {preset}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    value={tempInput[action] || ''}
+                                    onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
+                                    placeholder="Or type custom rejection reason..."
+                                    className="w-full bg-white border border-rose-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                  />
+
+                                  <div className="flex items-center justify-end gap-1.5 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                      className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmRejectAction(action, msg.docket?.title || 'Incident')}
+                                      className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-sm flex items-center gap-1"
+                                    >
+                                      <X className="w-3.5 h-3.5" /> Reject & Re-Plan
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Inline Override / Edit Form */}
+                              {mode === 'override' && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 animate-fadeIn">
+                                  <div className="flex items-center justify-between text-xs font-bold text-amber-900">
+                                    <span className="flex items-center gap-1">
+                                      <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                                      Edit Dispatch Directive
+                                    </span>
+                                    <button
+                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                      className="text-slate-400 hover:text-slate-600"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <textarea
+                                    rows={2}
+                                    value={tempInput[action] || ''}
+                                    onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
+                                    placeholder="Enter modified operational dispatch instruction..."
+                                    className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                                  />
+
+                                  <div className="flex items-center justify-end gap-1.5 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                      className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmOverrideAction(action)}
+                                      className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded shadow-sm flex items-center gap-1"
+                                    >
+                                      <Send className="w-3.5 h-3.5" /> Dispatch Overridden Directive
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Tri-Action Buttons (Authorize / Reject / Override) */}
+                              {state.status === 'PENDING' && !mode && (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1">
+                                  <button
+                                    onClick={() => handleAuthorizeAction(action)}
+                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-sky-600 hover:bg-sky-700 text-white shadow-sm active:scale-95"
+                                  >
+                                    <ArrowRightCircle className="w-3.5 h-3.5" />
+                                    <span>Authorize</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveFormMode(prev => ({ ...prev, [action]: 'reject' }));
+                                      setTempInput(prev => ({ ...prev, [action]: '' }));
+                                    }}
+                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 hover:border-rose-300 shadow-sm active:scale-95"
+                                  >
+                                    <X className="w-3.5 h-3.5 text-rose-600" />
+                                    <span>Reject / Re-plan</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveFormMode(prev => ({ ...prev, [action]: 'override' }));
+                                      setTempInput(prev => ({ ...prev, [action]: action }));
+                                    }}
+                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-white hover:bg-amber-50 text-amber-800 border border-amber-200 hover:border-amber-300 shadow-sm active:scale-95"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Override / Edit</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -517,7 +875,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {/* Quick Spawning Triggers Chips */}
       <div className="px-6 py-2.5 border-t border-slate-100 bg-slate-50/80 flex items-center gap-2 overflow-x-auto">
         <span className="text-[10px] font-mono text-slate-400 uppercase font-bold flex-shrink-0">
-          QUICK SPAWNING TRIGGERS:
+          QUICK SCENARIO TRIGGERS:
         </span>
         <button
           onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (Cluster A)', 'Cluster A')}
@@ -559,7 +917,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             className={`p-2 rounded-lg transition-all ${
               inputValue.trim() && !isSimulating
                 ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md'
-                : 'text-slate-300 cursor-not-allowed'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
           >
             <Send className="w-4 h-4" />
