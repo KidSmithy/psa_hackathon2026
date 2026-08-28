@@ -3,6 +3,7 @@ supabase
 python-dotenv
 openai
 langgraph
+langchain
 langchain-openai
 langchain-mcp-adapters
 langfuse
