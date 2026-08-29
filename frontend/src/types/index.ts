@@ -141,12 +141,6 @@ export interface TimeBracket {
   severity: SeverityLevel;
 }
 
-export interface IncidentLaneData {
-  incident: ClusterWithAlerts;
-  brackets: TimeBracket[];
-  allAlertsSorted: RawAlert[];
-}
-
 export interface InterpolatedAGVState {
   vehicleId: string;
   x: number;

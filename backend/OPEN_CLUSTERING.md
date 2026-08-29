@@ -52,7 +52,13 @@ instead of one generic one.
 | `agent/investigators/general.py` | **New.** Catch-all investigator for incidents no specialist owns. |
 | `agent/server.py` | Added `GET /api/stage1`, `POST /api/stage1/persist`; fixed a missing import that made `/api/investigate` fail at request time. |
 | `scripts/run_stage1.py` | **New.** CLI to preview or persist a Stage 1 run. |
+| `scripts/export_stage1_sql.py` | **New.** Emits a Stage 1 run as a portable `.sql` seed file. |
+| `scripts/mock_alerts.py` | **New.** Generates `raw_alerts` rows in the seeded style, as correlated episodes plus singletons plus noise. |
 | `sql/002_open_clustering.sql` | **New.** DDL for the v2 tables. |
+| `sql/003_seed_incident_clusters_v2.sql` | **New, generated.** The 7 incidents derived from your existing 25 alerts. |
+| `sql/004_seed_scale_demo.sql` | **New, generated.** 240 mock alerts + 53 incidents, for testing at scale. |
+| `frontend/src/components/IncidentTimeRibbon.tsx` | Rewritten as one unified timeline — no per-cluster rows. |
+| `frontend/src/lib/supabase.ts` | Exports `CLUSTERS_TABLE`, driven by `VITE_CLUSTERS_TABLE`. |
 
 ---
 
@@ -60,13 +66,21 @@ instead of one generic one.
 
 ### 0. One-time: create the new Supabase tables
 
-Open the Supabase SQL Editor and run `backend/sql/002_open_clustering.sql`.
+In the Supabase SQL Editor, run the files in `backend/sql/` in order:
 
-It creates three tables and touches nothing that already exists:
+| File | What it does | Required? |
+|---|---|---|
+| `002_open_clustering.sql` | Creates `stage1_runs`, `incident_clusters_v2`, `safety_escalations` | Yes |
+| `003_seed_incident_clusters_v2.sql` | Seeds the 7 incidents the algorithm derives from your existing 25 `raw_alerts` | Yes, to have data |
+| `004_seed_scale_demo.sql` | Optional: adds 240 mock alerts (ids `ALT-1xxx`) plus the 53 incidents derived from them | Only for testing at scale |
 
-- `stage1_runs` — one row per algorithm run (config + stats)
-- `incident_clusters_v2` — the incidents (first five columns identical to v1)
-- `safety_escalations` — safety-channel alerts, which bypass scoring entirely
+None of them touch `raw_alerts`' existing rows or `incident_clusters`.
+`003` inserts incidents only — it references the `ALT-001`..`ALT-025` rows you
+already have. `004` is the one that adds alerts, and every id it adds starts
+with `ALT-1`, so it cannot collide with the originals.
+
+Every statement upserts on its primary key, so re-running a file is safe. Each
+file ends with the exact `delete` statements that undo it.
 
 ### 1. Backend env
 
@@ -107,6 +121,49 @@ Replaces the contents of the v2 tables with this run. `--persist --append`
 keeps earlier runs alongside it — every row carries the `run_id` that produced
 it, so history stays queryable either way. `incident_clusters` is never written
 to.
+
+### 3b. Regenerating the seed files
+
+The `.sql` files are generated from a real algorithm run, not hand-written:
+
+```bash
+# 003 — incidents from whatever is in raw_alerts right now
+python scripts/export_stage1_sql.py
+
+# 004 — mock alerts plus the incidents they produce
+python scripts/export_stage1_sql.py --source mock --count 240 \
+    --include-raw-alerts --run-id RUN-SCALE-0001 \
+    --out sql/004_seed_scale_demo.sql
+```
+
+`scripts/mock_alerts.py` is the generator behind `--source mock`. It emits rows
+in your exact `raw_alerts` shape, using only alert types and asset ids that
+already exist in the database, so an investigator's MCP tool calls still
+resolve. Alerts come out as *episodes* — bursts that should correlate — mixed
+with lone alerts that should stay singletons and INFO noise that gets filtered,
+which is what makes the clustering output realistic rather than 240 singletons.
+
+Deterministic: same `--seed`, same alerts. Change `--count`, `--span-minutes`
+or `--seed` and regenerate to get a different-shaped stream.
+
+### 3c. Switching the app over to v2
+
+Three places, none of which require touching component code:
+
+| Where | Change | Effect |
+|---|---|---|
+| `backend/.env` | `STAGE1_SOURCE=live` | The agent pipeline clusters `raw_alerts` itself instead of reading v1 rows |
+| `frontend/.env` | `VITE_CLUSTERS_TABLE=incident_clusters_v2` | The UI reads the generated incidents |
+| Supabase | run `002` + `003` | The v2 tables exist and have data |
+
+To go back to the original demo, set `STAGE1_SOURCE=table` and
+`VITE_CLUSTERS_TABLE=incident_clusters` (or just delete both lines — those are
+the defaults for v1 behaviour). Nothing in v1 was modified, so the rollback is
+complete.
+
+`frontend/src/App.tsx` reads the table name from `CLUSTERS_TABLE` in
+`src/lib/supabase.ts` and passes the rows down as props, so every page —
+alerts, yard map, timeline — follows automatically.
 
 ### 4. Run the agent pipeline over the live clusters
 
@@ -149,6 +206,57 @@ VITE_CLUSTERS_TABLE=incident_clusters_v2
 Then `npm run dev`. Leave it unset (or set to `incident_clusters`) to show the
 original demo — the UI code is identical for both, because the five columns it
 reads are the same.
+
+---
+
+## The unified timeline
+
+The old ribbon gave every incident its own horizontal lane, so its height was
+`44px x incident count`. That works for four hand-labelled clusters and breaks
+immediately under open clustering — 240 mock alerts produce 53 incidents, and
+the 200-alert PSA-Sprint bulk stream produces 80. It also implied a grouping
+that no longer means anything: with hundreds of incidents, one row per incident
+is not a view, it is a list with extra steps.
+
+`IncidentTimeRibbon` is now a single shared time axis at **fixed height
+regardless of incident count**:
+
+| Band | Shows | Why it scales |
+|---|---|---|
+| Density bars | How many incidents *started* in each of 60 time buckets, stacked by severity | A count per bucket stays readable at any volume; individual marks do not |
+| Incident track | One marker per incident at its onset, with a line showing how long its alerts kept arriving | Diamond = correlated (2+ alerts), hollow circle = singleton |
+| Alert strip | Every raw alert as a thin tick | Texture under the incidents — where the noise actually was |
+| Bracket band | The 20s split rule, drawn **only for the selected incident** | The rule is still there; it just no longer costs a permanent row per incident |
+
+Below the chart is a chronological chip strip, which is how you reach an
+incident whose marker is buried in a busy stretch. Selection, the shared
+scrubber, and safety-channel markers all work as before.
+
+Nothing about the timeline assumes v1 or v2: `is_singleton` falls back to
+"one alert" when the column is absent, so it renders the old `incident_clusters`
+rows unchanged.
+
+---
+
+## Where the triage agent plugs in
+
+Routing today is a deterministic `problem_type -> investigator` map. When you
+add an agent that picks the investigator from the most likely cause, it does not
+need a schema change or a coordinator rewrite — the decision is already data on
+the incident:
+
+- `agent/coordinator.py`'s `resolve_domain()` prefers `cluster["domain"]` and
+  only falls back to the map when it is missing. An agent that sets `domain`
+  (and `assigned_agent`) before fan-out overrides the default silently.
+- The `coordinator` node itself is still a pass-through and exists precisely so
+  a decision step has somewhere to live between "Stage 1 produced incidents" and
+  "fan out to investigators".
+- `incident_clusters_v2` already has `assigned_domain` and `assigned_agent`
+  columns for it to write to, plus `problem_type` and `suggested_priority` as
+  inputs to reason over.
+
+The deterministic map stays useful as the fallback for when the agent is
+unavailable or unsure, and as the thing to diff its choices against.
 
 ---
 

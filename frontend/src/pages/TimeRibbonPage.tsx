@@ -76,10 +76,10 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-white font-sans">
-              PAGE 2: INCIDENT TIME RIBBON & 20s SPLIT ENGINE
+              PAGE 2: UNIFIED INCIDENT TIMELINE
             </h2>
             <p className="text-slate-300 text-xs font-mono">
-              Deterministic temporal bracket segmentation (&le;20s grouped, &gt;20s split) across incident streams
+              When incidents happen across the whole terminal &mdash; one shared time axis, no per-cluster rows
             </p>
           </div>
         </div>
@@ -124,26 +124,38 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
       {/* Split Rule Specification Explainer & Selected Incident Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* 20s Split Rule Documentation Card */}
+        {/* How to read the unified timeline */}
         <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-sm space-y-3 font-mono text-xs text-slate-700">
           <div className="flex items-center space-x-2 font-bold text-psa-navy-dark text-sm border-b border-slate-200 pb-2">
             <Info className="w-4 h-4 text-tuas-cyan-dark" />
-            <span>20s SPLIT ALGORITHM RULE</span>
+            <span>READING THE TIMELINE</span>
           </div>
 
           <p className="leading-relaxed text-slate-600">
-            For each incident lane, member alerts are ordered by <code className="bg-slate-100 px-1 py-0.5 rounded text-psa-navy font-bold">timestamp</code>:
+            Every incident shares one time axis. Open clustering produces as many incidents as
+            the alert stream contains &mdash; possibly hundreds &mdash; so giving each one its own
+            row stops working. The chart height is fixed regardless of the count.
           </p>
 
           <ul className="space-y-2 list-disc list-inside text-[11px] text-slate-700">
             <li>
-              <strong>Δt ≤ 20s:</strong> Consecutive alerts merge into a continuous visual bracket capsule.
+              <strong>Density bars:</strong> how many incidents <em>started</em> in each time bucket,
+              stacked by severity. This is the part that stays readable at scale.
             </li>
             <li>
-              <strong>Δt &gt; 20s:</strong> Current bracket closes; a new distinct capsule starts (e.g. <span className="font-bold text-amber-700">CLUSTER-C</span> 25s gap split).
+              <strong>Diamond:</strong> a correlated incident (2+ alerts). <strong>Hollow circle:</strong> a
+              singleton &mdash; one alert that matched nothing else.
             </li>
             <li>
-              <strong>Safety Stream:</strong> Hard-wired safety trips bypass scoring and display as cross-lane dashed lines.
+              <strong>Trailing line:</strong> how long that incident kept producing alerts.
+            </li>
+            <li>
+              <strong>Safety stream:</strong> safety trips bypass priority scoring entirely and
+              show as dashed vertical markers.
+            </li>
+            <li>
+              <strong>20s split:</strong> still applied, but only drawn for the incident you select,
+              as bracket capsules under the main track.
             </li>
           </ul>
         </div>
@@ -173,6 +185,9 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
                   <h3 className="text-base font-bold text-psa-navy-dark font-sans">{selectedCluster.name}</h3>
                   <p className="text-slate-500 text-xs">
                     Primary Sector: <strong className="text-psa-navy">{selectedCluster.primary_location}</strong> • Agent: <strong className="text-tuas-teal-dark">{selectedCluster.assigned_agent}</strong>
+                    {selectedCluster.problem_type && (
+                      <> • Problem: <strong className="text-psa-navy">{selectedCluster.problem_type_label || selectedCluster.problem_type}</strong></>
+                    )}
                   </p>
                 </div>
 

@@ -138,12 +138,41 @@ def get_fallback_supabase_mock_data() -> Tuple[List[Dict[str, Any]], List[Dict[s
     return raw_alerts, telemetry, existing
 
 
+# PSA-Sprint may sit beside the repo (../../PSA-Sprint, the usual checkout) or
+# inside it (../PSA-Sprint). Both are searched rather than assuming one.
+SPRINT_ROOTS = [
+    BACKEND_DIR.parent.parent / "PSA-Sprint",
+    BACKEND_DIR.parent / "PSA-Sprint",
+]
+
+
+def sprint_paths(*parts: str) -> List[Path]:
+    """Every plausible location of a PSA-Sprint file, in preference order."""
+    out: List[Path] = []
+    for root in SPRINT_ROOTS:
+        out.append(root.joinpath(*parts))
+        out.append(root.joinpath("stage1_agv", "stage1", *parts))
+    return out
+
+
+def import_generate_alerts():
+    """Imports PSA-Sprint's generate_alerts from whichever root actually has it."""
+    for root in SPRINT_ROOTS:
+        for candidate in (root, root / "stage1_agv" / "stage1"):
+            if (candidate / "generate_alerts.py").exists():
+                if str(candidate) not in sys.path:
+                    sys.path.insert(0, str(candidate))
+                import generate_alerts
+                return generate_alerts
+    raise RuntimeError(
+        "PSA-Sprint's generate_alerts.py not found. Looked in: "
+        + ", ".join(str(r) for r in SPRINT_ROOTS)
+    )
+
+
 def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
     """Loads curated scenarios from PSA-Sprint."""
-    candidates = [
-        BACKEND_DIR.parent / "PSA-Sprint" / "out" / "raw_alerts.json",
-        BACKEND_DIR.parent / "PSA-Sprint" / "stage1_agv" / "stage1" / "out" / "raw_alerts.json",
-    ]
+    candidates = sprint_paths("out", "raw_alerts.json")
     for path in candidates:
         if path.exists():
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -151,8 +180,7 @@ def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
             return alerts, str(path)
     # Generate on the fly if files not found
     try:
-        sys.path.insert(0, str(BACKEND_DIR.parent / "PSA-Sprint"))
-        import generate_alerts
+        generate_alerts = import_generate_alerts()
         scenarios = generate_alerts.curated()
         alerts = []
         for _, _, grp in scenarios:
@@ -164,10 +192,7 @@ def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
 
 def load_from_bulk_file() -> Tuple[List[Dict[str, Any]], str]:
     """Loads bulk 200 alert dataset from PSA-Sprint."""
-    candidates = [
-        BACKEND_DIR.parent / "PSA-Sprint" / "out" / "raw_alerts_bulk.json",
-        BACKEND_DIR.parent / "PSA-Sprint" / "stage1_agv" / "stage1" / "out" / "raw_alerts_bulk.json",
-    ]
+    candidates = sprint_paths("out", "raw_alerts_bulk.json")
     for path in candidates:
         if path.exists():
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -175,8 +200,7 @@ def load_from_bulk_file() -> Tuple[List[Dict[str, Any]], str]:
             return alerts, str(path)
     # Generate bulk on the fly
     try:
-        sys.path.insert(0, str(BACKEND_DIR.parent / "PSA-Sprint"))
-        import generate_alerts
+        generate_alerts = import_generate_alerts()
         alerts = generate_alerts.bulk(200, seed=7)
         return alerts, "PSA-Sprint::generate_alerts.bulk(200)"
     except Exception as e:
