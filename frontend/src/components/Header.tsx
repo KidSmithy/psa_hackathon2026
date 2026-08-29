@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs px-4 py-2 rounded-xl font-mono font-bold transition-all shadow-sm active:scale-95"
             >
               <ArrowLeft className="w-4 h-4 text-tuas-teal" />
-              <span>Back to Dispatch Dashboard</span>
+              <span>Back to Incident Queue</span>
             </button>
           )
         )}

@@ -60,6 +60,61 @@ interface ChatInterfaceProps {
   onBackToDocket: () => void;
 }
 
+interface TurnGroup {
+  id: string;
+  userMessage?: ChatMessage;
+  trajectoryMessages: ChatMessage[];
+  finalMessages: ChatMessage[];
+}
+
+const isTrajectoryMessage = (msg: ChatMessage): boolean => {
+  if (msg.isSpawningAnimation) return true;
+  if (msg.text && (
+    msg.text.includes('Coordinator Assessment Activated') ||
+    msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
+    msg.text.includes('Correlation agent:') ||
+    msg.text.includes('Dynamic Alternative Tool Query')
+  )) {
+    return true;
+  }
+  return false;
+};
+
+const groupMessagesIntoTurns = (messages: ChatMessage[]): TurnGroup[] => {
+  const turns: TurnGroup[] = [];
+  let currentTurn: TurnGroup = {
+    id: 'turn-initial',
+    trajectoryMessages: [],
+    finalMessages: [],
+  };
+
+  messages.forEach((msg) => {
+    if (msg.sender === 'user') {
+      if (currentTurn.userMessage || currentTurn.trajectoryMessages.length > 0 || currentTurn.finalMessages.length > 0) {
+        turns.push(currentTurn);
+      }
+      currentTurn = {
+        id: msg.id,
+        userMessage: msg,
+        trajectoryMessages: [],
+        finalMessages: [],
+      };
+    } else {
+      if (isTrajectoryMessage(msg)) {
+        currentTurn.trajectoryMessages.push(msg);
+      } else {
+        currentTurn.finalMessages.push(msg);
+      }
+    }
+  });
+
+  if (currentTurn.userMessage || currentTurn.trajectoryMessages.length > 0 || currentTurn.finalMessages.length > 0) {
+    turns.push(currentTurn);
+  }
+
+  return turns;
+};
+
 const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu;
 
 export const stripEmojis = (text: string): string => {
@@ -106,11 +161,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [inputValue, setInputValue] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+  const [expandedTrajectories, setExpandedTrajectories] = useState<Record<string, boolean>>({});
 
   // Human-in-the-loop Action States
   const [actionStates, setActionStates] = useState<Record<string, ActionReviewState>>({});
   const [activeFormMode, setActiveFormMode] = useState<Record<string, 'reject' | 'override' | null>>({});
   const [tempInput, setTempInput] = useState<Record<string, string>>({});
+
+  const toggleTrajectory = (turnId: string) => {
+    setExpandedTrajectories(prev => ({
+      ...prev,
+      [turnId]: !prev[turnId]
+    }));
+  };
 
   const isSimulatingRef = useRef<boolean>(false);
   const hasAutoTriggeredRef = useRef<string | null>(null);
@@ -620,21 +683,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setActionStates({});
     setActiveFormMode({});
     setTempInput({});
+    setExpandedTrajectories({});
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6.5rem)] max-w-5xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden font-sans">
+    <div className="flex flex-col w-full h-[calc(100vh-6.5rem)] md:h-[calc(100vh-7.5rem)] bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden font-sans">
       
       {/* Top Sherlock Header Bar */}
       <div className="px-6 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <button
             onClick={onBackToDocket}
-            className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-700 shadow-sm transition-colors flex items-center space-x-1.5 text-xs font-mono font-bold whitespace-nowrap active:scale-95"
-            title="Return to Alerts & Clusters"
+            className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-700 shadow-sm transition-colors flex items-center space-x-1.5 text-xs font-mono font-bold whitespace-nowrap active:scale-95 cursor-pointer"
+            title="Return to Incident Queue"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Docket</span>
+            <span>Back to Incident Queue</span>
           </button>
           
           <div>
@@ -676,384 +740,413 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       {/* Messages Feed Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/40">
-        {messages.map((msg) => {
-          const isUser = msg.sender === 'user';
+        {groupMessagesIntoTurns(messages).map((turn) => {
+          const isExpanded = !!expandedTrajectories[turn.id];
+          const totalLogs = turn.trajectoryMessages.reduce((sum, m) => sum + (m.spawningProgress?.logs?.length || 0), 0);
+          const subAgentCount = turn.trajectoryMessages.filter(m => m.isSpawningAnimation).length;
 
           return (
-            <div
-              key={msg.id}
-              className={`flex items-start space-x-3.5 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}
-            >
-              <div
-                className={`p-2 rounded-xl border flex-shrink-0 shadow-sm ${
-                  isUser
-                    ? 'bg-sky-600 text-white border-sky-600'
-                    : 'bg-white text-sky-600 border-slate-200'
-                }`}
-              >
-                {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-              </div>
-
-              <div className={`space-y-3 max-w-[88%] ${isUser ? 'items-end' : 'items-start'}`}>
-                {/* Text Bubble */}
-                {msg.text && (
-                  <div
-                    className={`p-4 rounded-2xl text-xs leading-relaxed font-sans shadow-sm ${
-                      isUser
-                        ? 'bg-sky-600 text-white rounded-tr-none font-medium'
-                        : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none font-sans'
-                    }`}
-                  >
-                    <MarkdownRenderer content={msg.text} isUser={isUser} />
-                    <div className={`text-[10px] mt-2 font-mono ${isUser ? 'text-sky-100' : 'text-slate-400'}`}>
-                      {msg.timestamp}
+            <div key={turn.id} className="space-y-4">
+              {/* User Prompt Message */}
+              {turn.userMessage && (
+                <div className="flex items-start space-x-3.5 flex-row-reverse space-x-reverse">
+                  <div className="p-2 rounded-xl border flex-shrink-0 shadow-sm bg-sky-600 text-white border-sky-600">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-3 flex-1 min-w-0 max-w-[85%] md:max-w-2xl ml-auto">
+                    <div className="p-4 rounded-2xl text-xs leading-relaxed font-sans shadow-sm bg-sky-600 text-white rounded-tr-none font-medium">
+                      <MarkdownRenderer content={turn.userMessage.text || ''} isUser={true} />
+                      <div className="text-[10px] mt-2 font-mono text-sky-100">
+                        {turn.userMessage.timestamp}
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Sub-Agent Spawning Sandbox Card */}
-                {msg.isSpawningAnimation && msg.spawningProgress && (
-                  <div className="bg-white border-2 border-sky-300 rounded-2xl p-5 shadow-md space-y-3.5 font-mono text-xs w-full animate-fadeIn">
-                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-                      <div className="flex items-center space-x-2.5">
-                        <div className="p-2 bg-sky-50 rounded-xl text-sky-600 border border-sky-200 shadow-sm">
-                          <Layers className="w-4 h-4 animate-pulse" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-900 text-xs">{msg.spawningProgress.agentName}</div>
-                          <div className="text-[10px] text-slate-500">{msg.spawningProgress.agentRole}</div>
-                        </div>
-                      </div>
+              {/* Assistant Triage & Synthesis Response */}
+              {(turn.trajectoryMessages.length > 0 || turn.finalMessages.length > 0) && (
+                <div className="flex items-start space-x-3.5">
+                  <div className="p-2 rounded-xl border flex-shrink-0 shadow-sm bg-white text-sky-600 border-slate-200">
+                    <Bot className="w-4 h-4" />
+                  </div>
 
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" />
-                        0% CONTAMINATION
-                      </span>
-                    </div>
-
-                    {/* Token Budget Meter */}
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-slate-600 flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-sky-600" />
-                          <span>Isolated Context Sandbox:</span>
-                        </span>
-                        <span className="font-bold text-sky-700">
-                          {msg.spawningProgress.tokensUsed} / {msg.spawningProgress.maxTokens} tokens ({Math.round((msg.spawningProgress.tokensUsed / msg.spawningProgress.maxTokens) * 100)}%)
-                        </span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-sky-600 rounded-full transition-all duration-700 shadow-sm"
-                          style={{ width: `${(msg.spawningProgress.tokensUsed / msg.spawningProgress.maxTokens) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Active MCP Execution Ticker */}
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                        <Activity className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Active MCP Tool Call:</span>
-                      </div>
-                      <div className="text-slate-800 text-[11px] font-bold truncate">
-                        {msg.spawningProgress.activeTool}
-                      </div>
-                    </div>
-
-                    {/* Expandable Logs */}
-                    <div className="pt-1">
-                      <button
-                        onClick={() => toggleLogExpand(msg.id)}
-                        className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1"
-                      >
-                        <span>Diagnostic Schema Logs ({msg.spawningProgress.logs.length})</span>
-                        {expandedLogs[msg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-
-                      {expandedLogs[msg.id] && (
-                        <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px]">
-                          {msg.spawningProgress.logs.map((log, i) => (
-                            <div key={i} className="text-slate-700 py-0.5">
-                              <MarkdownRenderer content={log} />
+                  <div className="space-y-3.5 flex-1 min-w-0 w-full">
+                    {/* Collapsible Multi-Agent Trajectory Accordion (Intentionally hidden at 1st sight) */}
+                    {turn.trajectoryMessages.length > 0 && (
+                      <div className="w-full">
+                        {/* Dropdown Header Pill (Inspired by Agent Thinking Trajectory) */}
+                        <button
+                          type="button"
+                          onClick={() => toggleTrajectory(turn.id)}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition-all text-xs font-mono shadow-2xs group cursor-pointer ${
+                            isExpanded
+                              ? 'bg-slate-100 text-slate-800 border-slate-300'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <div className="p-1 rounded-lg bg-sky-50 text-sky-600 border border-sky-200 flex-shrink-0">
+                              <Sparkles className="w-3.5 h-3.5" />
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Final Synthesized Human Review Docket Card with Full Human-in-the-loop Governance */}
-                {msg.docket && (
-                  <div className="bg-white border-2 border-slate-300 rounded-2xl p-5 shadow-md space-y-4 w-full animate-fadeIn">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded uppercase ${
-                        msg.docket.severity === 'CRITICAL' 
-                          ? 'bg-red-50 text-red-700 border border-red-200' 
-                          : 'bg-amber-50 text-amber-800 border border-amber-200'
-                      }`}>
-                        {msg.docket.severity} SEVERITY • ACTION REQUIRED
-                      </span>
-                      <span className="text-xs font-mono text-slate-400">DOCKET ID: {msg.docket.id}</span>
-                    </div>
-
-                    <h3 className="text-base font-bold text-slate-900 font-sans">
-                      {msg.docket.title}
-                    </h3>
-
-                    <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 space-y-1">
-                      <div className="text-xs font-bold text-sky-800 flex items-center gap-1.5 font-mono">
-                        <Sparkles className="w-4 h-4 text-sky-600" />
-                        <span>AI VERIFIED ROOT CAUSE</span>
-                      </div>
-                      <div className="text-xs text-slate-800 font-mono leading-relaxed">
-                        <MarkdownRenderer content={msg.docket.rootCause} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>MULTIMODAL HARDWARE EVIDENCE</span>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        {msg.docket.physicalEvidence.map((ev: { text: string; timestamp: string; verified: boolean }, i: number) => (
-                          <div key={i} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex items-start space-x-2 text-xs font-mono">
-                            <Check className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
-                            <div className="text-slate-800 text-[11px] leading-relaxed flex-1">
-                              <MarkdownRenderer content={ev.text} />
+                            <div className="flex items-center space-x-2 truncate">
+                              <span className="font-bold text-slate-800">
+                                {isExpanded ? 'Multi-Agent Investigation Trajectory' : 'Investigated across multi-agent runtime'}
+                              </span>
+                              <span className="text-[11px] text-slate-500 font-sans hidden sm:inline">
+                                ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''}{totalLogs > 0 ? ` · ${totalLogs} diagnostic logs` : ''})
+                              </span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
 
-                    {/* Human-in-the-Loop Action Controls (Authorize / Reject / Override) */}
-                    <div className="pt-2 border-t border-slate-100 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
-                          <Wrench className="w-4 h-4 text-sky-600" />
-                          <span>HUMAN GOVERNANCE DISPATCH</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono">Select Action</span>
-                      </div>
+                          <div className="flex items-center space-x-1.5 text-slate-500 group-hover:text-slate-900 text-xs font-sans flex-shrink-0 pl-2">
+                            <span className="text-[11px] font-medium hidden sm:inline">{isExpanded ? 'Hide triage steps' : 'View triage steps'}</span>
+                            {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-600" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
+                          </div>
+                        </button>
 
-                      <div className="space-y-3 font-mono">
-                        {msg.docket.recommendedActions.map((action: string, idx: number) => {
-                          const state = actionStates[action] || { status: 'PENDING' };
-                          const mode = activeFormMode[action] || null;
-                          const isAccepted = state.status === 'ACCEPTED';
-                          const isRejected = state.status === 'REJECTED';
-                          const isOverridden = state.status === 'OVERRIDDEN';
+                        {/* Expanded Trajectory Detail Content - Clean Timeline (No nested card-in-card) */}
+                        {isExpanded && (
+                          <div className="mt-2.5 p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3 animate-fadeIn text-xs font-mono">
+                            <div className="border-l-2 border-sky-300 pl-3.5 ml-1 space-y-3">
+                              {turn.trajectoryMessages.map((tMsg) => (
+                                <div key={tMsg.id} className="space-y-2">
+                                  {/* Coordinator or Correlation Step */}
+                                  {tMsg.text && (
+                                    <div className="text-slate-700 leading-relaxed font-sans text-xs bg-white/80 p-2.5 rounded-lg border border-slate-200/70">
+                                      <MarkdownRenderer content={tMsg.text} />
+                                      <div className="text-[10px] mt-1 font-mono text-slate-400">
+                                        {tMsg.timestamp}
+                                      </div>
+                                    </div>
+                                  )}
 
-                          return (
-                            <div
-                              key={idx}
-                              className={`p-3.5 rounded-xl border space-y-2.5 transition-all ${
-                                isAccepted
-                                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                                  : isRejected
-                                  ? 'bg-rose-50/60 border-rose-200 text-rose-900'
-                                  : isOverridden
-                                  ? 'bg-amber-50/60 border-amber-200 text-amber-950'
-                                  : 'bg-slate-50 border-slate-200 text-slate-800'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="text-xs font-medium leading-relaxed flex-1">
-                                  <span className="font-bold text-sky-700 mr-1.5">Action #{idx + 1}:</span>
-                                  <MarkdownRenderer content={action} className="inline" />
-                                </div>
-                                {state.status !== 'PENDING' && (
-                                  <button
-                                    onClick={() => handleResetAction(action)}
-                                    className="text-[10px] text-slate-400 hover:text-slate-700 flex items-center gap-0.5 underline font-bold"
-                                    title="Reset decision"
-                                  >
-                                    <RotateCcw className="w-3 h-3" /> Reset
-                                  </button>
-                                )}
-                              </div>
+                                  {/* Sub-Agent Spawning Sandbox - Streamlined */}
+                                  {tMsg.isSpawningAnimation && tMsg.spawningProgress && (
+                                    <div className="bg-white/90 border border-slate-200 p-3 rounded-xl space-y-2.5">
+                                      <div className="flex items-center justify-between gap-2 flex-wrap pb-1.5 border-b border-slate-100">
+                                        <div className="flex items-center space-x-2">
+                                          <Layers className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
+                                          <span className="font-bold text-slate-900">{tMsg.spawningProgress.agentName}</span>
+                                          <span className="text-[11px] text-slate-500 font-sans">({tMsg.spawningProgress.agentRole})</span>
+                                        </div>
+                                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                                          0% CONTAMINATION
+                                        </span>
+                                      </div>
 
-                              {/* State Badges */}
-                              {isAccepted && (
-                                <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1.5 rounded-lg">
-                                  <span className="flex items-center gap-1.5">
-                                    <Check className="w-4 h-4" /> AUTHORIZED & DISPATCHED
-                                  </span>
-                                  <span className="text-[10px] font-mono">WO-88219</span>
-                                </div>
-                              )}
+                                      <div className="flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg">
+                                        <span className="flex items-center gap-1">
+                                          <Lock className="w-3 h-3 text-sky-600" />
+                                          <span>Isolated Tokens:</span>
+                                        </span>
+                                        <span className="font-bold text-sky-700">
+                                          {tMsg.spawningProgress.tokensUsed} / {tMsg.spawningProgress.maxTokens} ({Math.round((tMsg.spawningProgress.tokensUsed / tMsg.spawningProgress.maxTokens) * 100)}%)
+                                        </span>
+                                      </div>
 
-                              {isRejected && (
-                                <div className="text-xs space-y-1 text-rose-800 bg-rose-100/70 px-3 py-2 rounded-lg">
-                                  <div className="flex items-center gap-1.5 font-bold">
-                                    <XCircle className="w-4 h-4 text-rose-600" /> REJECTED (RE-PLANNING TRIGGERED)
-                                  </div>
-                                  {state.reason && (
-                                    <div className="text-[11px] text-rose-700 italic pl-5">
-                                      Reason: "{state.reason}"
+                                      <div className="text-[11px] text-slate-600 flex items-center gap-1.5 px-1 truncate">
+                                        <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
+                                        <span className="text-slate-400">Active Tool:</span>
+                                        <span className="font-bold text-slate-800 truncate">{tMsg.spawningProgress.activeTool}</span>
+                                      </div>
+
+                                      {/* Diagnostic Schema Logs */}
+                                      <div className="pt-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleLogExpand(tMsg.id)}
+                                          className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1 cursor-pointer"
+                                        >
+                                          <span>Diagnostic Logs ({tMsg.spawningProgress.logs.length})</span>
+                                          {expandedLogs[tMsg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                        </button>
+
+                                        {expandedLogs[tMsg.id] && (
+                                          <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px]">
+                                            {tMsg.spawningProgress.logs.map((log, i) => (
+                                              <div key={i} className="text-slate-700 py-0.5">
+                                                <MarkdownRenderer content={log} />
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
-                              )}
-
-                              {isOverridden && (
-                                <div className="text-xs space-y-1 text-amber-900 bg-amber-100/70 px-3 py-2 rounded-lg">
-                                  <div className="flex items-center gap-1.5 font-bold">
-                                    <Edit3 className="w-4 h-4 text-amber-700" /> MANUAL OVERRIDE DISPATCHED
-                                  </div>
-                                  {state.overrideText && (
-                                    <div className="text-[11px] font-semibold text-amber-950 bg-white/80 p-1.5 rounded border border-amber-200 pl-2">
-                                      Directive: "{state.overrideText}"
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Inline Rejection Form */}
-                              {mode === 'reject' && (
-                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2 animate-fadeIn">
-                                  <div className="flex items-center justify-between text-xs font-bold text-rose-800">
-                                    <span className="flex items-center gap-1">
-                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                                      Select Reason to Trigger Agent Re-Plan
-                                    </span>
-                                    <button
-                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                      className="text-slate-400 hover:text-slate-600"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-1">
-                                    {presetRejectionReasons.map((preset, pIdx) => (
-                                      <button
-                                        key={pIdx}
-                                        type="button"
-                                        onClick={() => setTempInput(prev => ({ ...prev, [action]: preset }))}
-                                        className="text-[10px] bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 px-2 py-0.5 rounded transition-colors"
-                                      >
-                                        {preset}
-                                      </button>
-                                    ))}
-                                  </div>
-
-                                  <input
-                                    type="text"
-                                    value={tempInput[action] || ''}
-                                    onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                    placeholder="Or type custom rejection reason..."
-                                    className="w-full bg-white border border-rose-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                                  />
-
-                                  <div className="flex items-center justify-end gap-1.5 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                      className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleConfirmRejectAction(action, msg.docket?.title || 'Incident')}
-                                      className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-sm flex items-center gap-1"
-                                    >
-                                      <X className="w-3.5 h-3.5" /> Reject & Re-Plan
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Inline Override / Edit Form */}
-                              {mode === 'override' && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 animate-fadeIn">
-                                  <div className="flex items-center justify-between text-xs font-bold text-amber-900">
-                                    <span className="flex items-center gap-1">
-                                      <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                                      Edit Dispatch Directive
-                                    </span>
-                                    <button
-                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                      className="text-slate-400 hover:text-slate-600"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-
-                                  <textarea
-                                    rows={2}
-                                    value={tempInput[action] || ''}
-                                    onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                    placeholder="Enter modified operational dispatch instruction..."
-                                    className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
-                                  />
-
-                                  <div className="flex items-center justify-end gap-1.5 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                      className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleConfirmOverrideAction(action)}
-                                      className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded shadow-sm flex items-center gap-1"
-                                    >
-                                      <Send className="w-3.5 h-3.5" /> Dispatch Overridden Directive
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Tri-Action Buttons (Authorize / Reject / Override) */}
-                              {state.status === 'PENDING' && !mode && (
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1">
-                                  <button
-                                    onClick={() => handleAuthorizeAction(action)}
-                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-sky-600 hover:bg-sky-700 text-white shadow-sm active:scale-95"
-                                  >
-                                    <ArrowRightCircle className="w-3.5 h-3.5" />
-                                    <span>Authorize</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      setActiveFormMode(prev => ({ ...prev, [action]: 'reject' }));
-                                      setTempInput(prev => ({ ...prev, [action]: '' }));
-                                    }}
-                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 hover:border-rose-300 shadow-sm active:scale-95"
-                                  >
-                                    <X className="w-3.5 h-3.5 text-rose-600" />
-                                    <span>Reject / Re-plan</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      setActiveFormMode(prev => ({ ...prev, [action]: 'override' }));
-                                      setTempInput(prev => ({ ...prev, [action]: action }));
-                                    }}
-                                    className="py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1 transition-all bg-white hover:bg-amber-50 text-amber-800 border border-amber-200 hover:border-amber-300 shadow-sm active:scale-95"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                                    <span>Override / Edit</span>
-                                  </button>
-                                </div>
-                              )}
+                              ))}
                             </div>
-                          );
-                        })}
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    )}
+
+                    {/* Final Assistant Response in Turn (Unified, Single-Container Presentation) */}
+                    {turn.finalMessages.map((fMsg) => (
+                      <div key={fMsg.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-xs font-sans space-y-4 text-slate-800 w-full animate-fadeIn">
+                        {/* Text Lead */}
+                        {fMsg.text && (
+                          <div className="leading-relaxed text-slate-800">
+                            <MarkdownRenderer content={fMsg.text} isUser={false} />
+                          </div>
+                        )}
+
+                        {/* Integrated Synthesized Human Review Docket */}
+                        {fMsg.docket && (
+                          <div className="space-y-4 pt-1">
+                            {/* Title & Severity Row */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                              <div className="flex items-center space-x-2">
+                                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                                  fMsg.docket.severity === 'CRITICAL' 
+                                    ? 'bg-rose-100 text-rose-800' 
+                                    : 'bg-amber-100 text-amber-900'
+                                }`}>
+                                  {fMsg.docket.severity} SEVERITY
+                                </span>
+                                <h3 className="font-bold text-sm text-slate-900 font-sans">
+                                  {fMsg.docket.title}
+                                </h3>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400">DOCKET ID: {fMsg.docket.id}</span>
+                            </div>
+
+                            {/* Verified Root Cause - Clean Left Accent */}
+                            <div className="border-l-3 border-sky-500 bg-sky-50/60 p-3 rounded-r-xl space-y-1">
+                              <div className="text-[11px] font-bold text-sky-900 flex items-center gap-1.5 font-mono">
+                                <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                                <span>AI VERIFIED ROOT CAUSE</span>
+                              </div>
+                              <div className="text-slate-800 leading-relaxed text-xs">
+                                <MarkdownRenderer content={fMsg.docket.rootCause} />
+                              </div>
+                            </div>
+
+                            {/* Hardware Evidence - Clean List (No nested cards) */}
+                            {fMsg.docket.physicalEvidence && fMsg.docket.physicalEvidence.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-[11px] font-bold text-slate-700 font-mono flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>MULTIMODAL HARDWARE EVIDENCE</span>
+                                </div>
+                                <ul className="space-y-1.5 pl-0.5">
+                                  {fMsg.docket.physicalEvidence.map((ev: { text: string; timestamp: string; verified: boolean }, i: number) => (
+                                    <li key={i} className="flex items-start space-x-2 text-slate-700 text-xs leading-relaxed">
+                                      <Check className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                                      <span className="flex-1"><MarkdownRenderer content={ev.text} /></span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {/* Human Governance Actions - Clean Divided List */}
+                            {fMsg.docket.recommendedActions && fMsg.docket.recommendedActions.length > 0 && (
+                              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 font-mono">
+                                  <span className="flex items-center gap-1.5">
+                                    <Wrench className="w-3.5 h-3.5 text-sky-600" />
+                                    <span>HUMAN GOVERNANCE DISPATCH</span>
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-normal">Operator Action Required</span>
+                                </div>
+
+                                <div className="divide-y divide-slate-100 font-mono">
+                                  {fMsg.docket.recommendedActions.map((action: string, idx: number) => {
+                                    const state = actionStates[action] || { status: 'PENDING' };
+                                    const mode = activeFormMode[action] || null;
+                                    const isAccepted = state.status === 'ACCEPTED';
+                                    const isRejected = state.status === 'REJECTED';
+                                    const isOverridden = state.status === 'OVERRIDDEN';
+
+                                    return (
+                                      <div key={idx} className="py-2.5 space-y-2 first:pt-0 last:pb-0">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="text-xs text-slate-800 leading-relaxed flex-1 font-sans">
+                                            <span className="font-bold text-sky-700 mr-1.5 font-mono">Action #{idx + 1}:</span>
+                                            <MarkdownRenderer content={action} className="inline" />
+                                          </div>
+
+                                          {/* Action Status Badges or Trigger Buttons */}
+                                          {isAccepted && (
+                                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
+                                              <Check className="w-3.5 h-3.5" /> Authorized & Dispatched
+                                            </div>
+                                          )}
+
+                                          {isRejected && (
+                                            <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg shrink-0">
+                                              <XCircle className="w-3.5 h-3.5" /> Rejected (Re-planning)
+                                            </div>
+                                          )}
+
+                                          {isOverridden && (
+                                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg shrink-0">
+                                              <Edit3 className="w-3.5 h-3.5" /> Manual Override
+                                            </div>
+                                          )}
+
+                                          {state.status === 'PENDING' && !mode && (
+                                            <div className="flex items-center space-x-1 shrink-0">
+                                              <button
+                                                onClick={() => handleAuthorizeAction(action)}
+                                                className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer"
+                                              >
+                                                <ArrowRightCircle className="w-3 h-3" /> Authorize
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'reject' }));
+                                                  setTempInput(prev => ({ ...prev, [action]: '' }));
+                                                }}
+                                                className="px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-all active:scale-95 cursor-pointer"
+                                                title="Reject recommendation and trigger re-plan"
+                                              >
+                                                Reject
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'override' }));
+                                                  setTempInput(prev => ({ ...prev, [action]: action }));
+                                                }}
+                                                className="px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 border border-amber-200 rounded-lg transition-all active:scale-95 cursor-pointer"
+                                                title="Manually edit directive"
+                                              >
+                                                Edit
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Status Detail Sub-notes */}
+                                        {isRejected && state.reason && (
+                                          <p className="text-[11px] text-rose-600 italic pl-3">
+                                            Operator stated reason: "{state.reason}"
+                                          </p>
+                                        )}
+
+                                        {isOverridden && state.overrideText && (
+                                          <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200 pl-3 font-mono">
+                                            Directive: "{state.overrideText}"
+                                          </p>
+                                        )}
+
+                                        {/* Inline Rejection Form */}
+                                        {mode === 'reject' && (
+                                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
+                                            <div className="flex items-center justify-between font-bold text-rose-800">
+                                              <span className="flex items-center gap-1">
+                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                                Select Reason to Trigger Agent Re-Plan
+                                              </span>
+                                              <button
+                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                                className="text-slate-400 hover:text-slate-600"
+                                              >
+                                                <X className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-1">
+                                              {presetRejectionReasons.map((preset, pIdx) => (
+                                                <button
+                                                  key={pIdx}
+                                                  type="button"
+                                                  onClick={() => setTempInput(prev => ({ ...prev, [action]: preset }))}
+                                                  className="text-[10px] bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 px-2 py-0.5 rounded transition-colors"
+                                                >
+                                                  {preset}
+                                                </button>
+                                              ))}
+                                            </div>
+
+                                            <input
+                                              type="text"
+                                              value={tempInput[action] || ''}
+                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
+                                              placeholder="Or type custom rejection reason..."
+                                              className="w-full bg-white border border-rose-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                            />
+
+                                            <div className="flex items-center justify-end gap-1.5 pt-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
+                                              >
+                                                Cancel
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleConfirmRejectAction(action, fMsg.docket?.title || 'Incident')}
+                                                className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
+                                              >
+                                                <X className="w-3.5 h-3.5" /> Reject & Re-Plan
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Inline Override Form */}
+                                        {mode === 'override' && (
+                                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
+                                            <div className="flex items-center justify-between font-bold text-amber-900">
+                                              <span className="flex items-center gap-1">
+                                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                                                Edit Dispatch Directive
+                                              </span>
+                                              <button
+                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                                className="text-slate-400 hover:text-slate-600"
+                                              >
+                                                <X className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+
+                                            <textarea
+                                              rows={2}
+                                              value={tempInput[action] || ''}
+                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
+                                              placeholder="Enter modified operational dispatch instruction..."
+                                              className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                                            />
+
+                                            <div className="flex items-center justify-end gap-1.5 pt-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
+                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
+                                              >
+                                                Cancel
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleConfirmOverrideAction(action)}
+                                                className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
+                                              >
+                                                <Send className="w-3.5 h-3.5" /> Dispatch Override
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-slate-400 font-mono pt-1">
+                          {fMsg.timestamp}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1083,38 +1176,43 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Spawning Triggers Chips */}
-      <div className="px-6 py-2.5 border-t border-slate-100 bg-slate-50/80 flex items-center gap-2 overflow-x-auto">
-        <span className="text-[10px] font-mono text-slate-400 uppercase font-bold flex-shrink-0">
-          QUICK SCENARIO TRIGGERS:
+      {/* Quick Scenario Triggers Chips - Minimalist Prompt Pills */}
+      <div className="px-5 py-2 border-t border-slate-100 bg-white flex items-center gap-1.5 overflow-x-auto text-[11px] font-mono">
+        <span className="text-slate-400 uppercase font-bold flex-shrink-0 text-[10px] mr-1 flex items-center gap-1">
+          <Sparkles className="w-3 h-3 text-sky-500" />
+          <span>SUGGESTED:</span>
         </span>
         <button
+          type="button"
           onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (CLUSTER-A)', 'CLUSTER-A')}
           disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+          className="bg-slate-50 hover:bg-sky-50 hover:text-sky-800 text-slate-600 border border-slate-200 hover:border-sky-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
           Lane 7 Jam (CLUSTER-A)
         </button>
         <button
+          type="button"
           onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (CLUSTER-B)', 'CLUSTER-B')}
           disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+          className="bg-slate-50 hover:bg-amber-50 hover:text-amber-900 text-slate-600 border border-slate-200 hover:border-amber-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
           BCSS-02 Charger Trip (CLUSTER-B)
         </button>
         <button
+          type="button"
           onClick={() => triggerAgentSpawningSimulation('Investigate Sector A Battery Starvation (CLUSTER-C)', 'CLUSTER-C')}
           disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-emerald-50 text-emerald-900 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+          className="bg-slate-50 hover:bg-emerald-50 hover:text-emerald-900 text-slate-600 border border-slate-200 hover:border-emerald-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
           Sector A Starvation (CLUSTER-C)
         </button>
         <button
+          type="button"
           onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active cluster', undefined)}
           disabled={isSimulating}
-          className="text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+          className="bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
-          Full Spawning Demo (all clusters)
+          All Clusters Demo
         </button>
       </div>
 
