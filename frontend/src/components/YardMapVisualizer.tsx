@@ -235,53 +235,10 @@ export const YardMapVisualizer: React.FC<YardMapVisualizerProps> = ({
             <Compass className="w-4 h-4 text-tuas-teal animate-spin-slow" />
             <span className="text-white text-xs uppercase font-sans font-bold">SPACED AGV YARD MAP (850m × 480m)</span>
           </div>
-
-          <div className="h-3.5 w-px bg-slate-700 hidden sm:block" />
-
-          <div className="flex items-center space-x-2 text-[11px] text-slate-400">
-            <span>SECTORS: <strong className="text-slate-200">QUAY • CHARGING • MAINLINE</strong></span>
-            <span>•</span>
-            <span>AGVs: <strong className="text-tuas-cyan">{agvStates.length} Active</strong></span>
-            {cursorCoords && (
-              <>
-                <span>•</span>
-                <span className="text-tuas-teal font-bold bg-black/60 px-2 py-0.5 rounded border border-tuas-teal/30">
-                  X: {cursorCoords.x}m, Y: {cursorCoords.y}m
-                </span>
-              </>
-            )}
-          </div>
         </div>
 
         {/* Right: Quick Controls */}
         <div className="flex items-center space-x-2">
-          <div className="hidden sm:flex items-center space-x-1 bg-black/40 p-1 rounded-lg border border-slate-800 text-[10px]">
-            <button
-              onClick={() => setShowGrid(!showGrid)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${showGrid ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-            >
-              Grid
-            </button>
-            <button
-              onClick={() => setShowTracks(!showTracks)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${showTracks ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-            >
-              Tracks
-            </button>
-            <button
-              onClick={() => setShowHalos(!showHalos)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${showHalos ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-            >
-              Halos
-            </button>
-            <button
-              onClick={() => setShowLabels(!showLabels)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${showLabels ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-            >
-              Labels
-            </button>
-          </div>
-
           <div className="flex items-center space-x-1 bg-black/40 p-1 rounded-lg border border-slate-800">
             <button
               onClick={() => setZoom(z => Math.min(z * 1.2, 3.5))}

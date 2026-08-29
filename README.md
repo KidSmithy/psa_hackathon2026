@@ -1,6 +1,6 @@
 # PSA Hackathon 2026 - Automated Port Terminal Incident Investigation Platform
 
-This repository contains the full-stack system for the PSA Automated Port Terminal Incident Investigation platform, featuring real-time SCADA telemetry correlation, FastMCP micro-servers, Supabase integration, and a React-based operator console with agent spawning visualization.
+This repository contains the full-stack system for the PSA Automated Port Terminal Incident Investigation platform, featuring real-time SCADA telemetry correlation, FastMCP micro-servers, deterministic spatial-temporal clustering (ST-DBSCAN + Yard Topology), LangGraph multi-agent orchestration, Supabase integration, and a React-based operator console with live agent spawning visualization.
 
 ---
 
@@ -8,20 +8,44 @@ This repository contains the full-stack system for the PSA Automated Port Termin
 
 ```text
 ├── backend/
-│   ├── agents/                   # Multi-agent investigation orchestration
-│   ├── mcp/                      # FastMCP micro-servers (telemetry, diagnostics, docket)
-│   │   ├── telemetry_server.py   # SCADA telemetry & queue status micro-server
-│   │   ├── diagnostics_server.py # PLC fault code & maintenance records micro-server
-│   │   ├── docket_server.py      # Incident review docket publishing micro-server
+│   ├── agent/                    # LangGraph multi-agent triage & investigation pipeline
+│   │   ├── investigators/        # Specialized agent roles (lane, power, fleet_power)
+│   │   │   ├── base.py           # Shared ReAct loop & prompt building
+│   │   │   ├── lane.py           # Lane & corridor operations specialist
+│   │   │   ├── power.py          # Battery charging station & power specialist
+│   │   │   └── fleet_power.py    # Fleet-wide power correlation specialist
+│   │   ├── coordinator.py        # Spawns investigator subgraphs based on incident clusters
+│   │   ├── correlation.py        # Synthesizes cross-cluster root causes & timeline
+│   │   ├── docket.py             # Prepares docket payloads & calls submit_incident_docket
+│   │   ├── docket_shape.py       # Pydantic schemas & adapters for frontend contract
+│   │   ├── graph.py              # Compiled LangGraph state graph with MCP tools
+│   │   ├── mcp_tools.py          # Stdio FastMCP client & RBAC context binder
+│   │   ├── run.py                # Standalone CLI entrypoint for graph execution
+│   │   ├── server.py             # FastAPI backend (REST & SSE endpoints for live UI)
+│   │   ├── stage1_bridge.py      # Loads Stage 1 clusters from Supabase or memory
+│   │   ├── state.py              # LangGraph state definitions (OverallState)
+│   │   └── tracing.py            # Langfuse observability & tracing integration
+│   ├── clustering/               # Stage 1: Deterministic alert clustering & prioritization
+│   │   ├── filter.py             # ST-DBSCAN + topology filter, deduplication, & scoring
+│   │   ├── yard.py               # Yard spatial-topology graph (lanes, junctions, QC, BCSS)
+│   │   └── adapter.py            # Data model adapters for alerts & telemetry
+│   ├── mcp/                      # FastMCP server & security layer
+│   │   ├── server.py             # Consolidated FastMCP server (telemetry, diagnostics, docket)
+│   │   ├── telemetry_server.py   # Individual telemetry micro-server (reference)
+│   │   ├── diagnostics_server.py # Individual diagnostics micro-server (reference)
+│   │   ├── docket_server.py      # Individual docket micro-server (reference)
 │   │   ├── security.py           # RBAC decorators & Supabase audit logging
 │   │   ├── supabase_client.py    # Supabase connection & data access client
 │   │   ├── test_mcp_servers.py   # FastMCP unit test suite
 │   │   └── test_with_openai.py   # End-to-end agent verification script
+│   ├── scripts/                  # Helper & experimental scripts (VLM video analysis)
+│   ├── video/                    # Port CCTV footage samples
+│   ├── test_clustering.py        # CLI test suite for Stage 1 clustering
 │   ├── database_schema.md        # Database schema specifications
-│   └── requirements.txt          # Python dependencies
+│   └── requirements.txt          # Python backend dependencies
 ├── frontend/
 │   ├── src/                      # React application source code
-│   │   ├── components/           # UI components (Alerts, Clusters, Copilot)
+│   │   ├── components/           # UI components (Alerts, Clusters, Copilot, Spawning)
 │   │   └── App.tsx               # Main application component
 │   ├── package.json              # Node dependencies and scripts
 │   └── vite.config.ts            # Vite configuration
@@ -38,48 +62,17 @@ This repository contains the full-stack system for the PSA Automated Port Termin
 - **Node.js**: v18.0.0+ and **npm** (for Frontend)
 - **Python**: v3.10+ (for Backend)
 - **Supabase Account / Project**: PostgreSQL database configured with required schemas
-- **OpenAI API Key** (optional, required for autonomous agent tests)
-
----
-
-## 🖥️ Running the Frontend
-
-The frontend is a Vite + React + TypeScript + Tailwind CSS application providing the PSA Terminal Incident Alerts & Agent Spawning Console.
-
-### 1. Navigate to the Frontend directory
-```bash
-cd frontend
-```
-
-### 2. Install dependencies
-```bash
-npm install
-```
-
-### 3. Configure Environment Variables (Optional)
-If connecting directly to Supabase from the client, create or update `.env` in the `frontend/` root:
-```env
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-### 4. Start the Development Server
-```bash
-npm run dev
-```
-
-The application will be accessible at:
-👉 **`http://localhost:5173`** (or the port shown in your terminal).
-
-### Other Available Scripts (Frontend)
-- `npm run build` — Type-check and compile production bundle
-- `npm run preview` — Locally preview the production build
+- **OpenAI API Key** (required for LangGraph multi-agent LLM investigations)
+- **Langfuse API Keys** (optional, for LLM tracing & observability)
 
 ---
 
 ## ⚙️ Running the Backend
 
-The backend provides FastMCP micro-servers for telemetry SCADA ingestion, diagnostics, and docket publishing with Role-Based Access Control (RBAC) and Supabase audit logging.
+The backend provides:
+1. **Deterministic ST-DBSCAN + Yard Topology Clustering** (Stage 1) to group raw terminal alerts into structured incident clusters.
+2. **Unified FastMCP Server** exposing all telemetry, diagnostics, and docket publishing tools with Role-Based Access Control (RBAC) and Supabase audit logging.
+3. **LangGraph Multi-Agent Investigation Pipeline & FastAPI Server** (Stage 2) with streaming SSE endpoints for the frontend visualizer.
 
 ### 1. Navigate to the Backend directory
 ```bash
@@ -106,35 +99,94 @@ pip install -r requirements.txt
 ```
 
 ### 4. Configure Environment Variables
-Create a `.env` file in the `backend/` directory (or verify `backend/.env`):
+Create or verify `.env` in the `backend/` directory:
 ```env
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_KEY=your_supabase_service_or_anon_key
 OPENAI_API_KEY=your_openai_api_key
+
+# Optional: Langfuse tracing
+LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+LANGFUSE_SECRET_KEY=your_langfuse_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-### 5. Running MCP Micro-Servers & Tests
+### 5. Running the Backend Services
 
-#### Start an MCP Server over `stdio`:
+#### Option A: Start the FastAPI LangGraph Server (Recommended for Frontend)
+Starts the REST and Server-Sent Events (SSE) investigation API (automatically connects to the unified FastMCP server):
 ```bash
-# Start the Telemetry FastMCP server:
-python mcp/telemetry_server.py
+uvicorn agent.server:app --reload --port 8000
+```
+- **Health Check**: `GET http://localhost:8000/api/health`
+- **Run Investigation**: `POST http://localhost:8000/api/investigate`
+- **Live Agent Spawning Stream**: `GET http://localhost:8000/api/investigate/stream?cluster_id=CLUSTER-A`
 
-# Start the Diagnostics FastMCP server:
-python mcp/diagnostics_server.py
-
-# Start the Docket Publishing FastMCP server:
-python mcp/docket_server.py
+#### Option B: Run the LangGraph Multi-Agent CLI
+Run an end-to-end investigation run from the command line:
+```bash
+python -m agent.run
 ```
 
-#### Run Automated Test Suites:
+#### Option C: Test Stage 1 Alert Clustering
+Run deterministic ST-DBSCAN + Yard Topology clustering on live Supabase alerts or curated test streams:
 ```bash
-# Run unit tests (RBAC validation & Supabase integration):
+# Read live alerts from Supabase
+python test_clustering.py --source supabase
+
+# Run with noise filtering enabled
+python test_clustering.py --source supabase --filter-noise
+
+# Run against curated PSA sprint scenarios
+python test_clustering.py --source curated
+```
+
+#### Option D: Run FastMCP Server & Tests
+```bash
+# Start the unified FastMCP server over stdio (all tools in one process):
+python mcp/server.py
+
+# Run MCP unit test suite:
 python mcp/test_mcp_servers.py
 
-# Run Autonomous End-to-End LLM Agent test:
+# Run OpenAI agent tool calling test:
 python mcp/test_with_openai.py
 ```
+
+---
+
+## 🖥️ Running the Frontend
+
+The frontend is a Vite + React + TypeScript + Tailwind CSS application providing the PSA Terminal Incident Alerts & Agent Spawning Console.
+
+### 1. Navigate to the Frontend directory
+```bash
+cd frontend
+```
+
+### 2. Install dependencies
+```bash
+npm install
+```
+
+### 3. Configure Environment Variables (Optional)
+If connecting directly to Supabase from the client, create or update `.env` in `frontend/`:
+```env
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### 4. Start the Development Server
+```bash
+npm run dev
+```
+
+The application will be accessible at:
+👉 **`http://localhost:5173`** (or the port shown in your terminal).
+
+### Other Available Scripts (Frontend)
+- `npm run build` — Type-check and compile production bundle
+- `npm run preview` — Locally preview the production build
 
 ---
 
@@ -143,3 +195,4 @@ python mcp/test_with_openai.py
 - [overall.md](overall.md) — Multi-agent system architecture and SCADA pipeline.
 - [backend/database_schema.md](backend/database_schema.md) — Supabase database schema and table definitions.
 - [backend/mcp/mcp_setup_and_supabase_mapping.md](backend/mcp/mcp_setup_and_supabase_mapping.md) — Complete MCP protocol and Supabase mapping reference.
+- [backend/mcp/mcp_build_instructions.md](backend/mcp/mcp_build_instructions.md) — FastMCP server construction and security instructions.

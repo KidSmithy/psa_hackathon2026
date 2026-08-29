@@ -140,7 +140,7 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
       {/* Main 2-Column Responsive Layout: Map Visualizer on Left (col-span-8), Telemetry Roster on Right (col-span-4) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
-        {/* LEFT COLUMN (8 Cols): Yard Map Visualizer + Timeline Playback Scrubber */}
+        {/* LEFT COLUMN (8 Cols): Yard Map Visualizer */}
         <div className="lg:col-span-8 space-y-4">
           {/* Interactive Yard Map SVG Viewport */}
           <YardMapVisualizer
@@ -153,19 +153,6 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
             onSelectCluster={onSelectCluster}
             onSelectVehicle={onSelectVehicle}
             currentTimeSec={currentTimeSec}
-          />
-
-          {/* Synchronized Timeline Playback Controller */}
-          <TimeScrubberControls
-            currentTimeSec={currentTimeSec}
-            minTimeSec={minTimeSec}
-            maxTimeSec={maxTimeSec}
-            isPlaying={isPlaying}
-            playbackSpeed={playbackSpeed}
-            onTogglePlay={onTogglePlay}
-            onScrub={onScrubTime}
-            onSetSpeed={onSetSpeed}
-            onReset={onResetTime}
           />
         </div>
 

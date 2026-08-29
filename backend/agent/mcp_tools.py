@@ -16,26 +16,15 @@ MCP_DIR = Path(__file__).resolve().parent.parent / "mcp"
 
 def build_mcp_client() -> MultiServerMCPClient:
     """
-    Launches the three MCP servers as stdio subprocesses using the *current*
-    Python interpreter (sys.executable), so they run inside the same virtual
-    environment as the agent process — not whatever "python" resolves to on
-    the system PATH.
+    Launches the unified MCP server as a stdio subprocess using the *current*
+    Python interpreter (sys.executable), so it runs inside the same virtual
+    environment as the agent process.
     """
     return MultiServerMCPClient(
         {
-            "telemetry": {
+            "psa_unified": {
                 "command": sys.executable,
-                "args": [str(MCP_DIR / "telemetry_server.py")],
-                "transport": "stdio",
-            },
-            "diagnostics": {
-                "command": sys.executable,
-                "args": [str(MCP_DIR / "diagnostics_server.py")],
-                "transport": "stdio",
-            },
-            "docket": {
-                "command": sys.executable,
-                "args": [str(MCP_DIR / "docket_server.py")],
+                "args": [str(MCP_DIR / "server.py")],
                 "transport": "stdio",
             },
         }
