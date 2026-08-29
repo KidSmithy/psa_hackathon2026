@@ -32,27 +32,27 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="bg-psa-navy text-white border-b border-tuas-cyan/30 px-4 md:px-6 py-3 sticky top-0 z-50 shadow-lg shadow-psa-navy/20">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="max-w-[1600px] mx-auto flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         
         {/* Brand Identity & Header Left */}
-        <div className="flex items-center space-x-3.5">
-          <div className="bg-white/10 border border-tuas-cyan/40 p-2 rounded-xl flex items-center justify-center shadow-inner">
+        <div className="flex items-center space-x-3">
+          <div className="bg-white/10 border border-tuas-cyan/40 p-2 rounded-xl flex items-center justify-center shadow-inner shrink-0">
             <Anchor className="w-6 h-6 text-tuas-teal animate-pulse" />
           </div>
-          <div>
-            <div className="flex items-center space-x-2.5">
-              <span className="font-mono font-black text-xs px-2 py-0.5 rounded bg-tuas-teal text-psa-navy tracking-wider">
+          <div className="min-w-0">
+            <div className="flex items-center flex-wrap sm:flex-nowrap gap-2">
+              <span className="font-mono font-black text-xs px-2 py-0.5 rounded bg-tuas-teal text-psa-navy tracking-wider shrink-0">
                 PSA
               </span>
-              <h1 className="font-black text-base md:text-lg text-white tracking-wide font-sans">
+              <h1 className="font-black text-base md:text-lg text-white tracking-wide font-sans whitespace-nowrap">
                 TUAS SMART PORT OPERATIONS
               </h1>
-              <span className="bg-tuas-cyan/20 text-tuas-cyan border border-tuas-cyan/40 text-[10px] px-2.5 py-0.5 rounded font-mono font-bold tracking-wider hidden sm:inline-block">
+              <span className="bg-tuas-cyan/20 text-tuas-cyan border border-tuas-cyan/40 text-[10px] px-2.5 py-0.5 rounded font-mono font-bold tracking-wider hidden sm:inline-block whitespace-nowrap shrink-0">
                 {currentView === 'spawning' ? 'AGENT TRIAGE RUNTIME' : 'MULTI-VIEW DISPATCH PORTAL'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5 mt-0.5">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-tuas-teal animate-ping"></span>
+            <p className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-tuas-teal animate-ping shrink-0"></span>
               <span>SG::TUAS_PORT • SECTOR_A / BERTH_2 • LIVE SUPABASE TELEMETRY</span>
             </p>
           </div>
