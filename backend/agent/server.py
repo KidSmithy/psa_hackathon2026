@@ -13,9 +13,14 @@ Both accept an optional cluster_id to investigate a single real cluster
 
 Run with (from backend/, inside the venv):
     uvicorn agent.server:app --reload --port 8000
+
+Every request, every node finishing, and every failure is logged to the
+console at INFO level — nothing here fails silently.
 """
 
 import json
+import logging
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
@@ -30,6 +35,9 @@ from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
 from agent.stage1_bridge import get_incident_clusters
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("psa_agent.server")
+
 FRONTEND_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -40,9 +48,15 @@ FRONTEND_ORIGINS = [
 async def lifespan(app: FastAPI):
     # Built once at startup, not per-request — building it launches the 3 MCP
     # servers as subprocesses, which is too slow to redo on every call.
-    graph, client = await build_graph()
+    logger.info("Building graph and connecting to MCP servers...")
+    try:
+        graph, client = await build_graph()
+    except Exception:
+        logger.error("Failed to build graph at startup:\n%s", traceback.format_exc())
+        raise
     app.state.graph = graph
     app.state.mcp_client = client
+    logger.info("Graph built. Ready to accept requests.")
     yield
 
 
@@ -88,33 +102,47 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/investigate")
 async def investigate(body: InvestigateRequest) -> dict[str, Any]:
+    logger.info("POST /api/investigate cluster_id=%s", body.cluster_id)
     clusters = _select_clusters(body.cluster_id)
-    result = await app.state.graph.ainvoke({"clusters": clusters, "investigator_findings": []})
+    try:
+        result = await app.state.graph.ainvoke({"clusters": clusters, "investigator_findings": []})
+    except Exception as exc:
+        logger.error("Investigation failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    logger.info("POST /api/investigate cluster_id=%s complete", body.cluster_id)
     return _finalize(result)
 
 
 @app.get("/api/investigate/stream")
 async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) -> StreamingResponse:
+    logger.info("GET /api/investigate/stream cluster_id=%s", cluster_id)
     clusters = _select_clusters(cluster_id)
     graph = app.state.graph
 
     async def event_stream() -> AsyncIterator[str]:
         final_state: dict[str, Any] = {"investigator_findings": []}
-        async for update in graph.astream(
-            {"clusters": clusters, "investigator_findings": []}, stream_mode="updates"
-        ):
-            for node_name, node_output in update.items():
-                if not node_output:
-                    continue
-                for key, value in node_output.items():
-                    if key == "investigator_findings":
-                        final_state["investigator_findings"] = final_state.get(
-                            "investigator_findings", []
-                        ) + value
-                    else:
-                        final_state[key] = value
-                yield f"data: {json.dumps({'node': node_name, 'output': node_output})}\n\n"
+        try:
+            async for update in graph.astream(
+                {"clusters": clusters, "investigator_findings": []}, stream_mode="updates"
+            ):
+                for node_name, node_output in update.items():
+                    if not node_output:
+                        continue
+                    logger.info("node finished: %s -> keys=%s", node_name, list(node_output.keys()))
+                    for key, value in node_output.items():
+                        if key == "investigator_findings":
+                            final_state["investigator_findings"] = final_state.get(
+                                "investigator_findings", []
+                            ) + value
+                        else:
+                            final_state[key] = value
+                    yield f"data: {json.dumps({'node': node_name, 'output': node_output})}\n\n"
+        except Exception as exc:
+            logger.error("Investigation stream failed:\n%s", traceback.format_exc())
+            yield f"data: {json.dumps({'node': 'error', 'output': {'message': str(exc)}})}\n\n"
+            return
 
+        logger.info("GET /api/investigate/stream cluster_id=%s complete", cluster_id)
         yield f"data: {json.dumps({'node': 'complete', 'output': _finalize(final_state)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

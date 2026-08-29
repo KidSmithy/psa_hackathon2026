@@ -178,6 +178,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     activeStreamCleanupRef.current = streamInvestigation(
       clusterId,
       (event: StreamEvent) => {
+        if (event.node === 'error') {
+          setMessages(prev => [...prev, {
+            id: `stream-error-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            text: `⚠️ **Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+          }]);
+          finish();
+          return;
+        }
+
         if (event.node === 'complete') {
           const result: InvestigateResult = event.output;
           if (result.dockets.length === 0) {
