@@ -8,8 +8,14 @@ Two ways to run an investigation:
                                      it finishes, for the frontend's live
                                      "agent spawning" animation.
 
-Both accept an optional cluster_id to investigate a single real cluster
-(e.g. "CLUSTER-A") instead of every cluster currently in the database.
+Both accept an optional cluster_id to investigate a single incident (e.g.
+"INC-2026-0823-0001") instead of every incident Stage 1 currently produces.
+
+Stage 1 itself is exposed too:
+  - GET  /api/stage1          : run the open clustering algorithm over
+                                raw_alerts and return the incidents it found,
+                                without investigating anything.
+  - POST /api/stage1/persist  : same, then write the result to the v2 tables.
 
 Run with (from backend/, inside the venv):
     uvicorn agent.server:app --reload --port 8000
@@ -33,6 +39,8 @@ from pydantic import BaseModel
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
+from agent.stage1_bridge import STAGE1_SOURCE, get_clusters
+from agent.stage1_pipeline import fetch_raw_inputs, persist, run_stage1, to_cluster_row
 import sys
 
 # Force immediate unbuffered flushing to terminal
@@ -88,14 +96,29 @@ app.add_middleware(
 
 class InvestigateRequest(BaseModel):
     cluster_id: Optional[str] = None
+    # "live" runs the clustering algorithm over raw_alerts; "table" reads the
+    # legacy hand-seeded incident_clusters snapshot. Defaults to STAGE1_SOURCE.
+    source: Optional[str] = None
 
 
-def _select_clusters(cluster_id: Optional[str]) -> dict[str, Any]:
-    clusters = get_incident_clusters()
+class PersistRequest(BaseModel):
+    source: Optional[str] = None
+    # False appends this run alongside earlier ones instead of replacing them.
+    replace: bool = True
+
+
+def _select_clusters(cluster_id: Optional[str], source: Optional[str] = None) -> dict[str, Any]:
+    clusters = get_clusters(source=source)
     if cluster_id is None:
         return clusters
     if cluster_id not in clusters:
-        raise HTTPException(status_code=404, detail=f"Unknown cluster_id '{cluster_id}'")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Unknown cluster_id '{cluster_id}'. Incident ids are generated per Stage 1 "
+                f"run — currently available: {sorted(clusters)}"
+            ),
+        )
     return {cluster_id: clusters[cluster_id]}
 
 
@@ -113,14 +136,54 @@ def _finalize(result: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "stage1Source": STAGE1_SOURCE}
+
+
+@app.get("/api/stage1")
+async def stage1() -> dict[str, Any]:
+    """
+    Runs open clustering over the live raw_alerts stream and returns what it
+    found. Read-only — nothing is written to any table.
+    """
+    logger.info("GET /api/stage1")
+    try:
+        raw_alerts, telemetry = fetch_raw_inputs()
+        result = run_stage1(raw_alerts, telemetry)
+    except Exception as exc:
+        logger.error("Stage 1 failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    raw_by_id = {str(r.get("id")): r for r in raw_alerts}
+    return {
+        "stats": result["stats"],
+        "clusters": [to_cluster_row(c, raw_by_id, run_id="preview") for c in result["clusters"]],
+        "escalations": result["escalations"],
+        "noiseAlertIds": [str(n.get("id")) for n in result["noise"]],
+    }
+
+
+@app.post("/api/stage1/persist")
+async def stage1_persist(body: PersistRequest) -> dict[str, Any]:
+    """
+    Runs Stage 1 and writes the result to incident_clusters_v2 /
+    safety_escalations / stage1_runs. The original incident_clusters table is
+    left untouched.
+    """
+    logger.info("POST /api/stage1/persist replace=%s", body.replace)
+    try:
+        raw_alerts, telemetry = fetch_raw_inputs()
+        result = run_stage1(raw_alerts, telemetry)
+        return persist(result, raw_alerts, replace=body.replace)
+    except Exception as exc:
+        logger.error("Stage 1 persist failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/investigate")
 async def investigate(body: InvestigateRequest) -> dict[str, Any]:
     print(f"\n⚡ [API TRIGGER] POST /api/investigate cluster_id={body.cluster_id}", flush=True)
-    logger.info("POST /api/investigate cluster_id=%s", body.cluster_id)
-    clusters = _select_clusters(body.cluster_id)
+    logger.info("POST /api/investigate cluster_id=%s source=%s", body.cluster_id, body.source)
+    clusters = _select_clusters(body.cluster_id, body.source)
     try:
         result = await app.state.graph.ainvoke({"clusters": clusters, "investigator_findings": []})
     except Exception as exc:
@@ -133,10 +196,13 @@ async def investigate(body: InvestigateRequest) -> dict[str, Any]:
 
 
 @app.get("/api/investigate/stream")
-async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) -> StreamingResponse:
+async def investigate_stream(
+    cluster_id: Optional[str] = Query(default=None),
+    source: Optional[str] = Query(default=None),
+) -> StreamingResponse:
     print(f"\n⚡ [API STREAM START] GET /api/investigate/stream cluster_id={cluster_id}", flush=True)
-    logger.info("GET /api/investigate/stream cluster_id=%s", cluster_id)
-    clusters = _select_clusters(cluster_id)
+    logger.info("GET /api/investigate/stream cluster_id=%s source=%s", cluster_id, source)
+    clusters = _select_clusters(cluster_id, source)
     print(f"🔍 [API CLUSTERS] Target clusters: {list(clusters.keys())}", flush=True)
     graph = app.state.graph
 

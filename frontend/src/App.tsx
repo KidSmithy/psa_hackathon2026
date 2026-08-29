@@ -12,7 +12,7 @@ import {
   LaneQueueRow, 
   SeverityLevel 
 } from './types';
-import { supabase } from './lib/supabase';
+import { supabase, CLUSTERS_TABLE } from './lib/supabase';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -86,12 +86,12 @@ export const App: React.FC = () => {
 
       // 2. Fetch incident clusters
       const { data: clustersData, error: clustersError } = await supabase
-        .from('incident_clusters')
+        .from(CLUSTERS_TABLE)
         .select('*')
         .order('cluster_id', { ascending: true });
 
       if (clustersError) {
-        errors.push(`incident_clusters error: ${clustersError.message}`);
+        errors.push(`${CLUSTERS_TABLE} error: ${clustersError.message}`);
       } else {
         const clusterRows = (clustersData as IncidentClusterRow[]) || [];
         setClusters(clusterRows);

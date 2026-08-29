@@ -17,12 +17,17 @@ from langgraph.graph import END, START, StateGraph
 from agent.coordinator import assign_investigators, coordinator
 from agent.correlation import correlation_node
 from agent.docket import make_docket_node
-from agent.investigators import fleet_power, lane, power
+from agent.investigators import fleet_power, general, lane, power
 from agent.investigators.base import make_investigator_node
 from agent.mcp_tools import bind_actor_context, build_mcp_client, filter_tools
 from agent.state import OverallState
 
-INVESTIGATOR_NODE_NAMES = ["lane_investigator", "power_investigator", "fleet_power_investigator"]
+INVESTIGATOR_NODE_NAMES = [
+    "lane_investigator",
+    "power_investigator",
+    "fleet_power_investigator",
+    "general_investigator",
+]
 
 
 async def build_graph():
@@ -47,6 +52,9 @@ async def build_graph():
     fleet_power_tools = bind_actor_context(
         filter_tools(all_tools, fleet_power.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
     )
+    general_tools = bind_actor_context(
+        filter_tools(all_tools, general.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
+    )
     docket_tool = bind_actor_context(
         filter_tools(all_tools, {"submit_incident_docket"}), "SYSTEM_COORDINATOR"
     )[0]
@@ -56,16 +64,20 @@ async def build_graph():
     fleet_power_node = make_investigator_node(
         "fleet_power_investigator", fleet_power.SYSTEM_PROMPT, fleet_power_tools
     )
+    general_node = make_investigator_node(
+        "general_investigator", general.SYSTEM_PROMPT, general_tools
+    )
 
     domain_nodes = {
         "lane_investigator": lane_node,
         "power_investigator": power_node,
         "fleet_power_investigator": fleet_power_node,
+        "general_investigator": general_node,
     }
 
     async def investigator_dispatcher(state: dict) -> dict:
-        domain = state.get("domain", "lane_investigator")
-        node_fn = domain_nodes.get(domain, lane_node)
+        domain = state.get("domain", "general_investigator")
+        node_fn = domain_nodes.get(domain, general_node)
         return await node_fn(state)
 
     builder = StateGraph(OverallState)

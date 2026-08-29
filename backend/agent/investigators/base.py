@@ -40,7 +40,9 @@ class PlcRegister(BaseModel):
 
 
 class InvestigatorFinding(BaseModel):
-    incident_id: str = Field(description="The cluster id this finding belongs to, e.g. 'CLUSTER-A'")
+    incident_id: str = Field(
+        description="The incident id this finding belongs to, e.g. 'INC-2026-0823-0001'"
+    )
     cluster_name: str
     root_cause: str = Field(description="The verified root cause, in one or two sentences")
     evidence: dict[str, Any] = Field(
@@ -76,13 +78,33 @@ def make_investigator_node(
     structurer = model.with_structured_output(InvestigatorFinding, method="function_calling")
 
     async def node(state: dict[str, Any]) -> dict[str, Any]:
-        task = (
-            f"Investigate {state['cluster_name']} (cluster id: {state['cluster_id']}).\n"
-            f"Target entity: {state['target_entity']}.\n"
-            f"Triggering alert ids: {state.get('matched_alerts', [])}.\n"
+        lines = [
+            f"Investigate {state['cluster_name']} (incident id: {state['cluster_id']}).",
+            f"Target entity: {state['target_entity']}.",
+            f"Triggering alert ids: {state.get('matched_alerts', [])}.",
+        ]
+        # Present only when the incident came from live open clustering — the
+        # legacy pre-labelled table carries none of these.
+        if state.get("problem_type_label"):
+            lines.append(
+                f"Problem type: {state['problem_type_label']} ({state.get('problem_type')})."
+            )
+        if state.get("target_assets"):
+            lines.append(
+                "Assets involved (use these ids directly in tool calls): "
+                f"{', '.join(state['target_assets'])}."
+            )
+        if state.get("is_singleton"):
+            lines.append(
+                "This incident is a single uncorrelated alert. Diagnose only what that one "
+                "alert supports, and say plainly if the evidence is insufficient for a "
+                "confident root cause."
+            )
+        lines.append(
             "Use your tools to gather evidence, then explain the verified root cause "
             "in plain terms before you finish. Do not include any emojis."
         )
+        task = "\n".join(lines)
         result = await react_agent.ainvoke({"messages": [{"role": "user", "content": task}]})
         transcript = "\n".join(
             f"{m.type}: {m.content}" for m in result["messages"] if getattr(m, "content", None)
