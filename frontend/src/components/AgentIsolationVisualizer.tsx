@@ -51,10 +51,10 @@ export const AgentIsolationVisualizer: React.FC<AgentIsolationVisualizerProps> =
       status: 'investigating',
       activeStep: 'Querying mcp-terminal-telemetry :: 275 bar relief pressure',
       logs: [
-        '🔒 Isolated context container initialized (PID: 8841)',
-        '📦 Ingested schema: [LaneTopology, ActuatorCAN]',
-        '🔍 Lead vehicle resolved: AGV-104 (Zero-headway)',
-        '⚡ Dispatched PLC fault query 0x7E1'
+        'Isolated context container initialized (PID: 8841)',
+        'Ingested schema: [LaneTopology, ActuatorCAN]',
+        'Lead vehicle resolved: AGV-104 (Zero-headway)',
+        'Dispatched PLC fault query 0x7E1'
       ],
       color: 'cyan'
     },
@@ -69,10 +69,10 @@ export const AgentIsolationVisualizer: React.FC<AgentIsolationVisualizerProps> =
       status: 'investigating',
       activeStep: 'Decoding PLC register 0x9B4 :: OVERTEMP_THERMAL_CUTOFF',
       logs: [
-        '🔒 Isolated context container initialized (PID: 8842)',
-        '📦 Ingested schema: [HV_Switchgear, CoolantLoop]',
-        '🌡️ Busbar temp anomaly verified: 82.4°C',
-        '⚡ Contactor trip root cause: Coolant drop'
+        'Isolated context container initialized (PID: 8842)',
+        'Ingested schema: [HV_Switchgear, CoolantLoop]',
+        'Busbar temp anomaly verified: 82.4°C',
+        'Contactor trip root cause: Coolant drop'
       ],
       color: 'amber'
     }

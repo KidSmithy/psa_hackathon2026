@@ -41,17 +41,16 @@ def assign_investigators(state: OverallState) -> list[Send]:
     """Conditional-edge function: fans one Send() out per cluster."""
     sends = []
     for cluster_id, cluster in state["clusters"].items():
-        node_name = AGENT_TO_INVESTIGATOR_NODE.get(cluster["assigned_agent"])
-        if node_name is None:
-            continue  # unrecognized assigned_agent value — skip rather than crash
+        domain = AGENT_TO_INVESTIGATOR_NODE.get(cluster.get("assigned_agent"), "lane_investigator")
         sends.append(
             Send(
-                node_name,
+                "investigator",
                 {
                     "cluster_id": cluster_id,
                     "cluster_name": cluster["cluster_name"],
                     "target_entity": cluster["target_entity"],
                     "matched_alerts": cluster.get("matched_alerts", []),
+                    "domain": domain,
                 },
             )
         )

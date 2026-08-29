@@ -195,9 +195,12 @@ export const App: React.FC = () => {
     }
   };
 
+  const [resolveSessionId, setResolveSessionId] = useState<number>(0);
+
   const handleResolveIncident = (cluster: ClusterWithAlerts) => {
     setSelectedCluster(cluster);
     setSelectedClusterId(cluster.cluster_id);
+    setResolveSessionId(Date.now());
     setCurrentView('spawning');
   };
 
@@ -319,10 +322,11 @@ export const App: React.FC = () => {
         {/* PAGE 4: AGENT TRIAGE CHAT RUNTIME */}
         {currentView === 'spawning' && (
           <ChatInterface
+            key={selectedCluster ? `${selectedCluster.cluster_id}-${resolveSessionId}` : 'copilot'}
             selectedCluster={selectedCluster}
             onBackToDocket={() => {
               setSelectedCluster(null);
-              setCurrentView('yardMap');
+              setCurrentView('alerts');
             }}
           />
         )}

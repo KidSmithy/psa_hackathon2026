@@ -66,6 +66,7 @@ async def correlation_node(state: OverallState) -> dict[str, Any]:
     )
 
     result = await structurer.ainvoke(
-        f"{SYSTEM_PROMPT}\n\nFindings to review:\n\n{findings_summary}"
+        f"{SYSTEM_PROMPT}\n\nDo not use any emojis in reasons.\n\nFindings to review:\n\n{findings_summary}"
     )
-    return {"correlation": result.model_dump()}
+    from agent.docket_shape import strip_emojis
+    return {"correlation": strip_emojis(result.model_dump())}

@@ -21,4 +21,4 @@ Work in this order:
 
 Only use the tools you are given, and only call a tool when you need the specific value it
 returns — do not guess sensor readings. When you have enough evidence, state the verified
-root cause in one or two plain sentences, referencing the concrete numbers you found."""
+root cause in one or two plain sentences, referencing the concrete numbers you found. Do not use any emojis."""

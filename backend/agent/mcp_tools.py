@@ -31,13 +31,9 @@ def build_mcp_client() -> MultiServerMCPClient:
     )
 
 
-async def get_tools_by_name(
-    client: MultiServerMCPClient, names: set[str]
-) -> list:
-    """Fetches all tools across all three servers, then filters to `names`."""
-    all_tools = await client.get_tools()
+def filter_tools(all_tools: list, names: set[str]) -> list:
+    """Filters a list of tools to `names`, raising if any are missing."""
     tools = [t for t in all_tools if t.name in names]
-
     missing = names - {t.name for t in tools}
     if missing:
         raise RuntimeError(
@@ -45,6 +41,14 @@ async def get_tools_by_name(
             f"Available tools: {sorted(t.name for t in all_tools)}"
         )
     return tools
+
+
+async def get_tools_by_name(
+    client: MultiServerMCPClient, names: set[str]
+) -> list:
+    """Fetches all tools across all servers, then filters to `names`."""
+    all_tools = await client.get_tools()
+    return filter_tools(all_tools, names)
 
 
 def bind_actor_context(tools: list, user_role: str) -> list:

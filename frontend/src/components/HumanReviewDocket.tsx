@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ActionReviewState {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
@@ -151,7 +152,7 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
         </div>
 
         <div className="bg-tuas-teal-light/40 border-2 border-tuas-teal-border rounded-xl p-4 font-mono text-sm text-psa-navy-dark leading-relaxed shadow-sm">
-          {currentDocket.rootCause}
+          <MarkdownRenderer content={currentDocket.rootCause} />
         </div>
       </div>
 
@@ -178,7 +179,7 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
               </div>
               <div className="flex-1 space-y-1">
                 <div className="text-psa-navy-dark font-mono text-xs leading-relaxed font-medium">
-                  {evidence.text}
+                  <MarkdownRenderer content={evidence.text} />
                 </div>
                 <div className="text-[11px] text-psa-muted font-mono">
                   Timestamp: <span className="text-tuas-cyan-dark font-bold">{evidence.timestamp}</span>
@@ -263,7 +264,7 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 text-psa-navy-dark text-xs leading-relaxed font-semibold">
                     <span className="text-tuas-teal-dark font-bold mr-1.5">Action #{idx + 1}:</span>
-                    {action}
+                    <MarkdownRenderer content={action} className="inline" />
                   </div>
                   {state.status !== 'PENDING' && (
                     <button

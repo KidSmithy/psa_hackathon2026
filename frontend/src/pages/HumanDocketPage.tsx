@@ -18,6 +18,7 @@ import {
   Send,
   RotateCcw
 } from 'lucide-react';
+import { MarkdownRenderer } from '../components/MarkdownRenderer';
 
 interface ActionReviewState {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
@@ -177,7 +178,7 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
             </div>
 
             <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-4 font-mono text-sm text-slate-800 leading-relaxed">
-              {currentDocket.rootCause}
+              <MarkdownRenderer content={currentDocket.rootCause} />
             </div>
           </div>
 
@@ -204,7 +205,7 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
                   </div>
                   <div className="flex-1 space-y-1">
                     <div className="text-slate-800 font-mono text-xs leading-relaxed font-medium">
-                      {evidence.text}
+                      <MarkdownRenderer content={evidence.text} />
                     </div>
                     <div className="text-[11px] text-slate-500 font-mono">
                       Timestamp: <span className="text-sky-700 font-bold">{evidence.timestamp}</span>
@@ -289,9 +290,9 @@ export const HumanDocketPage: React.FC<HumanDocketPageProps> = ({
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="text-slate-900 text-xs leading-relaxed font-semibold">
+                      <div className="text-slate-900 text-xs leading-relaxed font-semibold flex-1">
                         <span className="text-sky-700 font-bold mr-1">Action #{idx + 1}:</span>
-                        {action}
+                        <MarkdownRenderer content={action} className="inline" />
                       </div>
                       {state.status !== 'PENDING' && (
                         <button

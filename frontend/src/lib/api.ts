@@ -37,9 +37,16 @@ export function streamInvestigation(
   onError: (err: Event) => void
 ): () => void {
   const params = clusterId ? `?cluster_id=${encodeURIComponent(clusterId)}` : '';
-  const source = new EventSource(`${API_BASE_URL}/api/investigate/stream${params}`);
+  const url = `${API_BASE_URL}/api/investigate/stream${params}`;
+  console.log(`📡 [streamInvestigation] Connecting to: ${url}`);
+  const source = new EventSource(url);
+
+  source.onopen = () => {
+    console.log(`✅ [streamInvestigation] Connection opened to: ${url}`);
+  };
 
   source.onmessage = (e) => {
+    console.log(`📥 [streamInvestigation] Received event:`, e.data);
     const parsed: StreamEvent = JSON.parse(e.data);
     onEvent(parsed);
     if (parsed.node === 'complete') {
@@ -47,9 +54,13 @@ export function streamInvestigation(
     }
   };
   source.onerror = (err) => {
+    console.error(`❌ [streamInvestigation] EventSource error on: ${url}`, err);
     onError(err);
     source.close();
   };
 
-  return () => source.close();
+  return () => {
+    console.log(`🔌 [streamInvestigation] Closing connection to: ${url}`);
+    source.close();
+  };
 }

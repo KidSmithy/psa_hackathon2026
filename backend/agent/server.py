@@ -33,14 +33,29 @@ from pydantic import BaseModel
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
-from agent.stage1_bridge import get_incident_clusters
+import sys
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Force immediate unbuffered flushing to terminal
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
+)
 logger = logging.getLogger("psa_agent.server")
 
 FRONTEND_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:5173",
 ]
 
 
@@ -65,6 +80,7 @@ app = FastAPI(title="PSA Incident Triage Agent API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -102,25 +118,31 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/investigate")
 async def investigate(body: InvestigateRequest) -> dict[str, Any]:
+    print(f"\n⚡ [API TRIGGER] POST /api/investigate cluster_id={body.cluster_id}", flush=True)
     logger.info("POST /api/investigate cluster_id=%s", body.cluster_id)
     clusters = _select_clusters(body.cluster_id)
     try:
         result = await app.state.graph.ainvoke({"clusters": clusters, "investigator_findings": []})
     except Exception as exc:
+        print(f"❌ [API ERROR] Investigation failed: {exc}", flush=True)
         logger.error("Investigation failed:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    print(f"✅ [API COMPLETE] POST /api/investigate cluster_id={body.cluster_id}", flush=True)
     logger.info("POST /api/investigate cluster_id=%s complete", body.cluster_id)
     return _finalize(result)
 
 
 @app.get("/api/investigate/stream")
 async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) -> StreamingResponse:
+    print(f"\n⚡ [API STREAM START] GET /api/investigate/stream cluster_id={cluster_id}", flush=True)
     logger.info("GET /api/investigate/stream cluster_id=%s", cluster_id)
     clusters = _select_clusters(cluster_id)
+    print(f"🔍 [API CLUSTERS] Target clusters: {list(clusters.keys())}", flush=True)
     graph = app.state.graph
 
     async def event_stream() -> AsyncIterator[str]:
         final_state: dict[str, Any] = {"investigator_findings": []}
+        yield f"data: {json.dumps({'node': 'started', 'output': {'cluster_id': cluster_id}})}\n\n"
         try:
             async for update in graph.astream(
                 {"clusters": clusters, "investigator_findings": []}, stream_mode="updates"
@@ -128,6 +150,7 @@ async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) ->
                 for node_name, node_output in update.items():
                     if not node_output:
                         continue
+                    print(f"🤖 [LangGraph Node Complete] node={node_name} keys={list(node_output.keys())}", flush=True)
                     logger.info("node finished: %s -> keys=%s", node_name, list(node_output.keys()))
                     for key, value in node_output.items():
                         if key == "investigator_findings":
@@ -138,10 +161,12 @@ async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) ->
                             final_state[key] = value
                     yield f"data: {json.dumps({'node': node_name, 'output': node_output})}\n\n"
         except Exception as exc:
+            print(f"❌ [API STREAM ERROR] {exc}", flush=True)
             logger.error("Investigation stream failed:\n%s", traceback.format_exc())
             yield f"data: {json.dumps({'node': 'error', 'output': {'message': str(exc)}})}\n\n"
             return
 
+        print(f"🏁 [API STREAM COMPLETE] cluster_id={cluster_id}", flush=True)
         logger.info("GET /api/investigate/stream cluster_id=%s complete", cluster_id)
         yield f"data: {json.dumps({'node': 'complete', 'output': _finalize(final_state)})}\n\n"
 

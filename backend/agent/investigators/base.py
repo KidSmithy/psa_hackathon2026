@@ -72,7 +72,7 @@ def make_investigator_node(
     graph via `graph.add_node(node_name, make_investigator_node(...))`.
     """
     model = ChatOpenAI(model=MODEL_NAME, temperature=0, reasoning_effort="none")
-    react_agent = create_react_agent(model, tools, prompt=system_prompt)
+    react_agent = create_react_agent(model, tools, prompt=system_prompt + "\n\nCRITICAL: Do NOT use any emojis in your thoughts, tool inputs, or findings.")
     structurer = model.with_structured_output(InvestigatorFinding, method="function_calling")
 
     async def node(state: dict[str, Any]) -> dict[str, Any]:
@@ -81,7 +81,7 @@ def make_investigator_node(
             f"Target entity: {state['target_entity']}.\n"
             f"Triggering alert ids: {state.get('matched_alerts', [])}.\n"
             "Use your tools to gather evidence, then explain the verified root cause "
-            "in plain terms before you finish."
+            "in plain terms before you finish. Do not include any emojis."
         )
         result = await react_agent.ainvoke({"messages": [{"role": "user", "content": task}]})
         transcript = "\n".join(
@@ -91,14 +91,17 @@ def make_investigator_node(
         finding: InvestigatorFinding = await structurer.ainvoke(
             "Based on this investigation transcript, produce the final structured finding.\n"
             f"incident_id must be exactly '{state['cluster_id']}'.\n"
-            f"cluster_name must be exactly '{state['cluster_name']}'.\n\n"
+            f"cluster_name must be exactly '{state['cluster_name']}'.\n"
+            "Do NOT include any emojis in titles, root_cause, impact, evidence_items, or recommended_actions.\n\n"
             f"Transcript:\n{transcript}"
         )
 
-        finding_dict = finding.model_dump()
+        from agent.docket_shape import strip_emojis
+
+        finding_dict = strip_emojis(finding.model_dump())
         # recommended_action (singular) is the field submit_incident_docket actually
         # requires — derived here rather than asked from the LLM twice in two shapes.
-        finding_dict["recommended_action"] = "; ".join(finding.recommended_actions)
+        finding_dict["recommended_action"] = "; ".join(finding_dict["recommended_actions"])
         return {"investigator_findings": [finding_dict]}
 
     node.__name__ = node_name

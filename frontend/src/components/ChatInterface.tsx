@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { DocketItem, ClusterWithAlerts } from '../types';
 import { streamInvestigation, InvestigateResult, StreamEvent } from '../lib/api';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ActionReviewState {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
@@ -59,18 +60,46 @@ interface ChatInterfaceProps {
   onBackToDocket: () => void;
 }
 
+const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu;
+
+export const stripEmojis = (text: string): string => {
+  if (!text) return text;
+  return text.replace(EMOJI_REGEX, '').trim();
+};
+
+export const sanitizeDocket = (docket: DocketItem): DocketItem => {
+  return {
+    ...docket,
+    title: stripEmojis(docket.title),
+    impact: stripEmojis(docket.impact),
+    rootCause: stripEmojis(docket.rootCause),
+    physicalEvidence: (docket.physicalEvidence || []).map(ev => ({
+      ...ev,
+      text: stripEmojis(ev.text)
+    })),
+    recommendedActions: (docket.recommendedActions || []).map(a => stripEmojis(a)),
+    plcRegisters: (docket.plcRegisters || []).map(r => ({
+      ...r,
+      description: stripEmojis(r.description),
+      name: stripEmojis(r.name)
+    }))
+  };
+};
+
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
   selectedCluster, 
   onBackToDocket 
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'msg-welcome',
       sender: 'assistant',
-      timestamp: '20:45:00',
+      timestamp: timeNow(),
       text: selectedCluster
-        ? `👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nSelected incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\nClick **"Trigger Spawn Demo"** or press **Enter** below to launch the isolated multi-agent triage and investigation sequence.`
-        : '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        ? `**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\n**Target Incident:** **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\n**Live multi-agent triage & root-cause investigation running automatically...**`
+        : '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
@@ -117,60 +146,173 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
-  // Auto-trigger exactly ONCE per selected cluster, using its real cluster_id
-  // directly — no more guessing "is this Cluster A or B" from the name, since
-  // the backend now routes by the real incident_clusters.assigned_agent column.
+  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
   useEffect(() => {
-    if (selectedCluster && hasAutoTriggeredRef.current !== selectedCluster.cluster_id) {
-      hasAutoTriggeredRef.current = selectedCluster.cluster_id;
-      triggerAgentSpawningSimulation(
-        `⚡ Run AI incident triage & spawn investigator agents for ${selectedCluster.cluster_id}: ${selectedCluster.name}`,
-        selectedCluster.cluster_id
-      );
-    }
-  }, [selectedCluster]);
+    if (!selectedCluster?.cluster_id) return;
 
-  const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    let isSubscribed = true;
+    const clusterId = selectedCluster.cluster_id;
+    const clusterName = selectedCluster.name;
+    const clusterLabel = `${clusterId}: ${clusterName}`;
 
-  /**
-   * Runs a real investigation against the backend LangGraph agent (see
-   * backend/agent/server.py). clusterId is a real Supabase cluster_id (e.g.
-   * "CLUSTER-A"), or undefined/null to investigate every cluster currently
-   * in incident_clusters at once.
-   *
-   * Each SSE event corresponds to one node finishing in the graph: an
-   * investigator agent, the correlation agent, or the final docket
-   * submission. There is no "token budget" or per-tool-call event from the
-   * backend today, so the sandbox card below shows real evidence and root
-   * cause, not fabricated token/tool numbers.
-   */
-  const triggerAgentSpawningSimulation = (
-    customQuery?: string,
-    clusterId?: string | null
-  ) => {
-    if (isSimulatingRef.current) return;
-    isSimulatingRef.current = true;
+    console.log('[ChatInterface] Triggering triage for:', clusterId);
     setIsSimulating(true);
 
-    const clusterLabel = clusterId || 'every active cluster';
+    const userMsgText = `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
       timestamp: timeNow(),
-      text: customQuery || `⚡ Run AI incident triage & spawn investigator agents for ${clusterLabel}`,
+      text: userMsgText,
     };
-    setMessages(prev => [...prev, userMsg]);
 
     const coordMsg: ChatMessage = {
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `🤖 **Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterLabel}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterId}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
     };
-    setMessages(prev => [...prev, coordMsg]);
+
+    setMessages(prev => {
+      if (prev.some(m => m.text === userMsgText)) return prev;
+      return [...prev, userMsg, coordMsg];
+    });
+
+    const cleanup = streamInvestigation(
+      clusterId,
+      (event: StreamEvent) => {
+        if (!isSubscribed) return;
+        if (event.node === 'started') return;
+
+        if (event.node === 'error') {
+          setMessages(prev => [...prev, {
+            id: `stream-error-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+          }]);
+          setIsSimulating(false);
+          return;
+        }
+
+        if (event.node === 'complete') {
+          const result: InvestigateResult = event.output;
+          if (result.dockets.length === 0) {
+            setMessages(prev => [...prev, {
+              id: `docket-empty-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `Investigation finished but produced no docket — check that ${clusterId} still exists in incident_clusters.`,
+            }]);
+          } else {
+            result.dockets.forEach((docket, i) => {
+              setMessages(prev => [...prev, {
+                id: `docket-${Date.now()}-${i}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
+                docket: sanitizeDocket(docket),
+              }]);
+            });
+          }
+          setIsSimulating(false);
+          return;
+        }
+
+        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
+          const finding = event.output.investigator_findings?.[0];
+          if (!finding) return;
+          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
+          const rootCauseClean = stripEmojis(finding.root_cause || '');
+          const roleClean = stripEmojis(finding.title || '');
+          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
+
+          setMessages(prev => [...prev, {
+            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            isSpawningAnimation: true,
+            spawningProgress: {
+              stage: 2,
+              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
+              agentName: agentLabel,
+              agentRole: roleClean,
+              cluster: finding.incident_id,
+              tokensUsed: 100,
+              maxTokens: 100,
+              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
+              logs: [
+                `Root cause: ${rootCauseClean}`,
+                ...evidenceClean,
+              ],
+            },
+          }]);
+        } else if (event.node === 'correlation') {
+          const groups = event.output.correlation?.linked_groups || [];
+          if (groups.length > 0) {
+            setMessages(prev => [...prev, {
+              id: `corr-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
+            }]);
+          }
+        }
+      },
+      (err) => {
+        if (!isSubscribed) return;
+        console.error('SSE Stream error:', err);
+        setMessages(prev => [...prev, {
+          id: `stream-err-${Date.now()}`,
+          sender: 'assistant',
+          timestamp: timeNow(),
+          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
+        }]);
+        setIsSimulating(false);
+      }
+    );
+
+    return () => {
+      isSubscribed = false;
+      cleanup();
+      setIsSimulating(false);
+    };
+  }, [selectedCluster?.cluster_id]);
+
+  /**
+   * Runs a manual investigation query (e.g. from user text input or quick scenario trigger buttons).
+   */
+  const triggerAgentSpawningSimulation = (
+    customQuery?: string,
+    clusterId?: string | null
+  ) => {
+    console.log('[ChatInterface] triggerAgentSpawningSimulation executing for clusterId:', clusterId);
+    activeStreamCleanupRef.current?.();
+    setIsSimulating(true);
+
+    const clusterLabel = clusterId || 'every active cluster';
+    const userMsgText = customQuery || `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
+    
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      timestamp: timeNow(),
+      text: userMsgText,
+    };
+
+    const coordMsg: ChatMessage = {
+      id: `coord-${Date.now()}`,
+      sender: 'assistant',
+      timestamp: timeNow(),
+      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterLabel}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+    };
+
+    setMessages(prev => {
+      if (prev.some(m => m.text === userMsgText)) return prev;
+      return [...prev, userMsg, coordMsg];
+    });
 
     const finish = () => {
-      isSimulatingRef.current = false;
       setIsSimulating(false);
       activeStreamCleanupRef.current = null;
     };
@@ -178,12 +320,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     activeStreamCleanupRef.current = streamInvestigation(
       clusterId,
       (event: StreamEvent) => {
+        if (event.node === 'started') return;
+
         if (event.node === 'error') {
           setMessages(prev => [...prev, {
             id: `stream-error-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
-            text: `⚠️ **Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
           }]);
           finish();
           return;
@@ -196,7 +340,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               id: `docket-empty-${Date.now()}`,
               sender: 'assistant',
               timestamp: timeNow(),
-              text: `⚠️ Investigation finished but produced no docket — check that ${clusterLabel} still exists in incident_clusters.`,
+              text: `Investigation finished but produced no docket — check that ${clusterLabel} still exists in incident_clusters.`,
             }]);
           } else {
             result.dockets.forEach((docket, i) => {
@@ -204,8 +348,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `docket-${Date.now()}-${i}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `📋 **Investigation complete:** synthesized into a Human Review Docket.`,
-                docket,
+                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
+                docket: sanitizeDocket(docket),
               }]);
             });
           }
@@ -213,9 +357,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           return;
         }
 
-        if (event.node.endsWith('_investigator')) {
+        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
           const finding = event.output.investigator_findings?.[0];
           if (!finding) return;
+          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
+          const rootCauseClean = stripEmojis(finding.root_cause || '');
+          const roleClean = stripEmojis(finding.title || '');
+          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
+
           setMessages(prev => [...prev, {
             id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
             sender: 'assistant',
@@ -223,16 +372,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             isSpawningAnimation: true,
             spawningProgress: {
               stage: 2,
-              stageText: `${event.node} finished investigating ${finding.cluster_name} (${finding.incident_id})`,
-              agentName: event.node,
-              agentRole: finding.title,
+              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
+              agentName: agentLabel,
+              agentRole: roleClean,
               cluster: finding.incident_id,
               tokensUsed: 100,
               maxTokens: 100,
               activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
               logs: [
-                `🔍 Root cause: ${finding.root_cause}`,
-                ...((finding.evidence_items as string[]) || []).map((e) => `📌 ${e}`),
+                `Root cause: ${rootCauseClean}`,
+                ...evidenceClean,
               ],
             },
           }]);
@@ -243,17 +392,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               id: `corr-${Date.now()}`,
               sender: 'assistant',
               timestamp: timeNow(),
-              text: `🔗 **Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => g.reason).join('; ')}`,
+              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
             }]);
           }
         }
       },
-      () => {
+      (err) => {
+        console.error('SSE Stream error:', err);
         setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`,
+          id: `stream-err-${Date.now()}`,
           sender: 'assistant',
           timestamp: timeNow(),
-          text: `⚠️ **Connection error** — could not reach the agent backend. Is \`uvicorn agent.server:app\` running on port 8000?`,
+          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
         }]);
         finish();
       }
@@ -276,7 +426,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `replan-user-${Date.now()}`,
       sender: 'user',
       timestamp: timeNow(),
-      text: `❌ **[HUMAN-IN-THE-LOOP OVERRIDE]** Rejected recommendation:\n*"${rejectedAction}"*\n\n📝 **Operator Stated Reason:** ${reason}`,
+      text: `**[HUMAN-IN-THE-LOOP OVERRIDE]** Rejected recommendation:\n*"${rejectedAction}"*\n\n**Operator Stated Reason:** ${reason}`,
     };
     setMessages(prev => [...prev, userMsg]);
 
@@ -286,7 +436,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: `replan-ack-${Date.now()}`,
         sender: 'assistant',
         timestamp: timeNow(),
-        text: `🔄 **Operator Feedback Ingested: Re-planning Triggered**\n- Human constraint recorded: *"${reason}"*.\n- Coordinator updating topological graph & querying alternative MCP resolution pathways...`
+        text: `**Operator Feedback Ingested: Re-planning Triggered**\n- Human constraint recorded: *"${reason}"*.\n- Coordinator updating topological graph & querying alternative MCP resolution pathways...`
       };
       setMessages(prev => [...prev, replanAckMsg]);
 
@@ -307,10 +457,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             maxTokens: 2000,
             activeTool: 'mcp-terminal-telemetry::get_alternate_bypass_routing(from=Lane-07, via=Lane-06)',
             logs: [
-              `⚠️ Discarded original constraint path: "${rejectedAction}"`,
-              '🗺️ Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
-              '🔄 Automated hydraulic back-pressure cycle simulated: 3x pulses @ 290 bar',
-              '✅ Secondary resolution docket generated with zero human crew dependency'
+              `Discarded original constraint path: "${rejectedAction}"`,
+              'Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
+              'Automated hydraulic back-pressure cycle simulated: 3x pulses @ 290 bar',
+              'Secondary resolution docket generated with zero human crew dependency'
             ]
           }
         };
@@ -342,7 +492,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             id: `revised-docket-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
-            text: `✨ **Revised Resolution Docket Synthesized (Rev. 2):**\nIncorporated your operational constraints. You can now authorize or adjust the alternative bypass actions below.`,
+            text: `**Revised Resolution Docket Synthesized (Rev. 2):**\nIncorporated your operational constraints. You can now authorize or adjust the alternative bypass actions below.`,
             docket: revisedDocket
           };
           setMessages(prev => [...prev, revisedDocketMsg]);
@@ -397,7 +547,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: `dispatch-confirm-${Date.now()}`,
         sender: 'assistant',
         timestamp: timeNow(),
-        text: `🚀 **Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
+        text: `**Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
       };
       setMessages(prev => [...prev, confirmMsg]);
     }, 400);
@@ -431,7 +581,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: `override-confirm-${Date.now()}`,
         sender: 'assistant',
         timestamp: timeNow(),
-        text: `✏️ **Manual Operator Override Dispatched**\n- **Original Plan:** "${actionText}"\n- **Supervisor Custom Directive:** *"${overrideText}"*\n- **Execution Channel:** Field Mobile Terminal & TOS Priority Queue\n- **Status:** **OVERRIDDEN COMMAND EXECUTED**`
+        text: `**Manual Operator Override Dispatched**\n- **Original Plan:** "${actionText}"\n- **Supervisor Custom Directive:** *"${overrideText}"*\n- **Execution Channel:** Field Mobile Terminal & TOS Priority Queue\n- **Status:** **OVERRIDDEN COMMAND EXECUTED**`
       };
       setMessages(prev => [...prev, overrideConfirmMsg]);
     }, 400);
@@ -464,7 +614,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: '👋 **Welcome to PSA Incident Copilot.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        text: '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
@@ -475,7 +625,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   return (
     <div className="flex flex-col h-[calc(100vh-6.5rem)] max-w-5xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden font-sans">
       
-      {/* Top Copilot Header Bar */}
+      {/* Top Sherlock Header Bar */}
       <div className="px-6 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <button
@@ -490,15 +640,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm font-bold text-slate-900 tracking-wide font-sans">
-                PSA INCIDENT COPILOT
+                PSA INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
                 SPAWNING & HUMAN GOVERNANCE
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-mono hidden sm:block">
-              Type any query below to trigger multi-agent spawning, triage, or test Reject/Override replanning
-            </p>
           </div>
         </div>
 
@@ -557,7 +704,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none font-sans'
                     }`}
                   >
-                    <div className="whitespace-pre-line leading-relaxed">{msg.text}</div>
+                    <MarkdownRenderer content={msg.text} isUser={isUser} />
                     <div className={`text-[10px] mt-2 font-mono ${isUser ? 'text-sky-100' : 'text-slate-400'}`}>
                       {msg.timestamp}
                     </div>
@@ -606,7 +753,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {/* Active MCP Execution Ticker */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                        <Activity className="w-3 h-3 text-emerald-600" />
+                        <Activity className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Active MCP Tool Call:</span>
                       </div>
                       <div className="text-slate-800 text-[11px] font-bold truncate">
@@ -628,7 +775,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px]">
                           {msg.spawningProgress.logs.map((log, i) => (
                             <div key={i} className="text-slate-700 py-0.5">
-                              {log}
+                              <MarkdownRenderer content={log} />
                             </div>
                           ))}
                         </div>
@@ -660,9 +807,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         <Sparkles className="w-4 h-4 text-sky-600" />
                         <span>AI VERIFIED ROOT CAUSE</span>
                       </div>
-                      <p className="text-xs text-slate-800 font-mono leading-relaxed">
-                        {msg.docket.rootCause}
-                      </p>
+                      <div className="text-xs text-slate-800 font-mono leading-relaxed">
+                        <MarkdownRenderer content={msg.docket.rootCause} />
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -675,7 +822,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         {msg.docket.physicalEvidence.map((ev: { text: string; timestamp: string; verified: boolean }, i: number) => (
                           <div key={i} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex items-start space-x-2 text-xs font-mono">
                             <Check className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
-                            <span className="text-slate-800 text-[11px] leading-relaxed">{ev.text}</span>
+                            <div className="text-slate-800 text-[11px] leading-relaxed flex-1">
+                              <MarkdownRenderer content={ev.text} />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -713,9 +862,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div className="text-xs font-medium leading-relaxed">
+                                <div className="text-xs font-medium leading-relaxed flex-1">
                                   <span className="font-bold text-sky-700 mr-1.5">Action #{idx + 1}:</span>
-                                  {action}
+                                  <MarkdownRenderer content={action} className="inline" />
                                 </div>
                                 {state.status !== 'PENDING' && (
                                   <button
@@ -909,6 +1058,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           );
         })}
 
+        {isSimulating && (
+          <div className="bg-sky-50 border-2 border-sky-300 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5 animate-pulse font-mono text-xs text-sky-900 w-full">
+            <div className="p-2.5 bg-sky-100 border border-sky-300 rounded-xl text-sky-700 flex-shrink-0">
+              <Zap className="w-4 h-4 animate-spin" />
+            </div>
+            <div className="space-y-1 flex-1 min-w-0">
+              <div className="font-bold flex items-center justify-between flex-wrap gap-2">
+                <span className="flex items-center gap-1.5 text-xs text-sky-950">
+                  <Activity className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
+                  <span>Agent Triage in Progress (LangGraph & MCP)</span>
+                </span>
+                <span className="text-[10px] bg-sky-200/80 px-2 py-0.5 rounded text-sky-800 font-bold uppercase tracking-wider">
+                  LIVE STREAMING
+                </span>
+              </div>
+              <p className="text-slate-600 text-[11px] font-sans">
+                Gathering telemetry, querying diagnostics tools, and formulating root cause...
+              </p>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -922,28 +1093,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          🔍 Lane 7 Jam (CLUSTER-A)
+          Lane 7 Jam (CLUSTER-A)
         </button>
         <button
           onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (CLUSTER-B)', 'CLUSTER-B')}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          ⚡ BCSS-02 Charger Trip (CLUSTER-B)
+          BCSS-02 Charger Trip (CLUSTER-B)
         </button>
         <button
           onClick={() => triggerAgentSpawningSimulation('Investigate Sector A Battery Starvation (CLUSTER-C)', 'CLUSTER-C')}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-emerald-50 text-emerald-900 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          🔋 Sector A Starvation (CLUSTER-C)
+          Sector A Starvation (CLUSTER-C)
         </button>
         <button
           onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active cluster', undefined)}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          ⚡ Full Spawning Demo (all clusters)
+          Full Spawning Demo (all clusters)
         </button>
       </div>
 
