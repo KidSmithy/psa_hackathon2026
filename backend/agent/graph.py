@@ -19,7 +19,7 @@ from agent.correlation import correlation_node
 from agent.docket import make_docket_node
 from agent.investigators import fleet_power, lane, power
 from agent.investigators.base import make_investigator_node
-from agent.mcp_tools import build_mcp_client, get_tools_by_name
+from agent.mcp_tools import bind_actor_context, build_mcp_client, get_tools_by_name
 from agent.state import OverallState
 
 INVESTIGATOR_NODE_NAMES = ["lane_investigator", "power_investigator", "fleet_power_investigator"]
@@ -33,11 +33,22 @@ async def build_graph():
     """
     client = build_mcp_client()
 
-    lane_tools = await get_tools_by_name(client, lane.TOOL_NAMES)
-    power_tools = await get_tools_by_name(client, power.TOOL_NAMES)
-    fleet_power_tools = await get_tools_by_name(client, fleet_power.TOOL_NAMES)
-    docket_tools = await get_tools_by_name(client, {"submit_incident_docket"})
-    docket_tool = docket_tools[0]
+    # Roles picked from backend/mcp/security.py's RBAC_PERMISSIONS matrix:
+    # LANE_OPERATIONS_ENGINEER is the smallest role that covers every read
+    # tool used by all 3 investigators; SYSTEM_COORDINATOR is the only role
+    # permitted to call submit_incident_docket.
+    lane_tools = bind_actor_context(
+        await get_tools_by_name(client, lane.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
+    )
+    power_tools = bind_actor_context(
+        await get_tools_by_name(client, power.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
+    )
+    fleet_power_tools = bind_actor_context(
+        await get_tools_by_name(client, fleet_power.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
+    )
+    docket_tool = bind_actor_context(
+        await get_tools_by_name(client, {"submit_incident_docket"}), "SYSTEM_COORDINATOR"
+    )[0]
 
     builder = StateGraph(OverallState)
 

@@ -71,9 +71,9 @@ def make_investigator_node(
     system prompt. The returned function is what gets registered on the
     graph via `graph.add_node(node_name, make_investigator_node(...))`.
     """
-    model = ChatOpenAI(model=MODEL_NAME, temperature=0)
+    model = ChatOpenAI(model=MODEL_NAME, temperature=0, reasoning_effort="none")
     react_agent = create_react_agent(model, tools, prompt=system_prompt)
-    structurer = model.with_structured_output(InvestigatorFinding)
+    structurer = model.with_structured_output(InvestigatorFinding, method="function_calling")
 
     async def node(state: dict[str, Any]) -> dict[str, Any]:
         task = (

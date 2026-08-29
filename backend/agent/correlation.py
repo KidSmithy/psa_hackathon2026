@@ -54,8 +54,8 @@ async def correlation_node(state: OverallState) -> dict[str, Any]:
     if len(findings) < 2:
         return {"correlation": CorrelationResult(linked_groups=[]).model_dump()}
 
-    model = ChatOpenAI(model=MODEL_NAME, temperature=0)
-    structurer = model.with_structured_output(CorrelationResult)
+    model = ChatOpenAI(model=MODEL_NAME, temperature=0, reasoning_effort="none")
+    structurer = model.with_structured_output(CorrelationResult, method="function_calling")
 
     findings_summary = "\n\n".join(
         f"incident_id: {f['incident_id']}\n"

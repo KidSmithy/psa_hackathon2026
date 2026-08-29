@@ -56,3 +56,32 @@ async def get_tools_by_name(
             f"Available tools: {sorted(t.name for t in all_tools)}"
         )
     return tools
+
+
+def bind_actor_context(tools: list, user_role: str) -> list:
+    """
+    Every MCP tool now enforces RBAC via an `actor_context` argument (see
+    backend/mcp/security.py) — without one, it defaults to "UNKNOWN_ROLE"
+    and every call is denied. Rather than trust the LLM to remember to pass
+    a correct actor_context on every single tool call, this wraps each
+    tool's coroutine to inject a fixed one for the calling agent, so
+    authorization is enforced by our own code, not by LLM tool-call
+    compliance. Mutates and returns the same tool objects.
+    """
+    actor_context = {
+        "user_id": "langgraph-agent",
+        "user_email": "agent@psa-triage.local",
+        "user_role": user_role,
+        "client_ip": "127.0.0.1",
+    }
+
+    for tool in tools:
+        original_coroutine = tool.coroutine
+
+        async def call_with_actor_context(*args, __original=original_coroutine, **kwargs):
+            kwargs["actor_context"] = actor_context
+            return await __original(*args, **kwargs)
+
+        tool.coroutine = call_with_actor_context
+
+    return tools
