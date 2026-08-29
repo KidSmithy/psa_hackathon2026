@@ -26,7 +26,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { DocketItem, ClusterWithAlerts } from '../types';
-import { INITIAL_DOCKETS } from '../data/mockData';
+import { streamInvestigation, InvestigateResult, StreamEvent } from '../lib/api';
 
 interface ActionReviewState {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
@@ -86,6 +86,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const isSimulatingRef = useRef<boolean>(false);
   const hasAutoTriggeredRef = useRef<string | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const activeStreamCleanupRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const presetRejectionReasons = [
@@ -108,48 +109,50 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scrollToBottom();
   }, [messages, isSimulating, activeFormMode]);
 
-  // Clean up timeouts on unmount
+  // Clean up timeouts and any open SSE stream on unmount
   useEffect(() => {
     return () => {
       clearAllTimeouts();
+      activeStreamCleanupRef.current?.();
     };
   }, []);
 
-  // Auto-trigger exactly ONCE per selected cluster
+  // Auto-trigger exactly ONCE per selected cluster, using its real cluster_id
+  // directly — no more guessing "is this Cluster A or B" from the name, since
+  // the backend now routes by the real incident_clusters.assigned_agent column.
   useEffect(() => {
     if (selectedCluster && hasAutoTriggeredRef.current !== selectedCluster.cluster_id) {
       hasAutoTriggeredRef.current = selectedCluster.cluster_id;
-      const isBCSS = selectedCluster.cluster_id.includes('B') || 
-                     selectedCluster.cluster_id.includes('0008') || 
-                     selectedCluster.primary_location.includes('BCSS');
-      
       triggerAgentSpawningSimulation(
         `⚡ Run AI incident triage & spawn investigator agents for ${selectedCluster.cluster_id}: ${selectedCluster.name}`,
-        isBCSS ? 'Cluster B' : 'Cluster A',
-        selectedCluster
+        selectedCluster.cluster_id
       );
     }
   }, [selectedCluster]);
 
   const timeNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+  /**
+   * Runs a real investigation against the backend LangGraph agent (see
+   * backend/agent/server.py). clusterId is a real Supabase cluster_id (e.g.
+   * "CLUSTER-A"), or undefined/null to investigate every cluster currently
+   * in incident_clusters at once.
+   *
+   * Each SSE event corresponds to one node finishing in the graph: an
+   * investigator agent, the correlation agent, or the final docket
+   * submission. There is no "token budget" or per-tool-call event from the
+   * backend today, so the sandbox card below shows real evidence and root
+   * cause, not fabricated token/tool numbers.
+   */
   const triggerAgentSpawningSimulation = (
-    customQuery?: string, 
-    targetCluster: 'Cluster A' | 'Cluster B' = 'Cluster A',
-    customClusterObj?: ClusterWithAlerts | null
+    customQuery?: string,
+    clusterId?: string | null
   ) => {
-    // Synchronous mutex lock to prevent duplicate runs
     if (isSimulatingRef.current) return;
     isSimulatingRef.current = true;
     setIsSimulating(true);
 
-    const isClusterA = targetCluster === 'Cluster A';
-    const clusterLabel = customClusterObj 
-      ? `${customClusterObj.cluster_id}: ${customClusterObj.name}`
-      : isClusterA 
-        ? 'Cluster A: Transfer Lane 7 Bottleneck' 
-        : 'Cluster B: BCSS-02 Charger Trip';
-
+    const clusterLabel = clusterId || 'every active cluster';
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -158,78 +161,92 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Step 1: Coordinator Stage
-    const t1 = setTimeout(() => {
-      const coordMsg: ChatMessage = {
-        id: `coord-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `🤖 **Stage 1: Coordinator Assessment Activated**\n- Ingested **142 field alerts** from SCADA message bus.\n- Deterministic spatial-temporal filter dropped 116 baseline noise events (**81.7% zero-token savings**).\n- Coordinator evaluated ${customClusterObj?.primary_location || (isClusterA ? 'Lane 7 & Berth 2' : 'Station BCSS-02')} topology graph $\\rightarrow$ **Spawning dedicated investigator sub-agent** in an isolated runtime sandbox.`
-      };
-      setMessages(prev => [...prev, coordMsg]);
+    const coordMsg: ChatMessage = {
+      id: `coord-${Date.now()}`,
+      sender: 'assistant',
+      timestamp: timeNow(),
+      text: `🤖 **Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterLabel}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+    };
+    setMessages(prev => [...prev, coordMsg]);
 
-      // Step 2: Sub-Agent Sandbox Pod & Token Budget
-      const t2 = setTimeout(() => {
-        const spawnMsgId = `spawn-${Date.now()}`;
-        const spawnMsg: ChatMessage = {
-          id: spawnMsgId,
-          sender: 'assistant',
-          timestamp: timeNow(),
-          isSpawningAnimation: true,
-          spawningProgress: {
-            stage: 2,
-            stageText: isClusterA 
-              ? 'Agent 1 (Lane Investigator) instantiated with exclusive PID 8841' 
-              : 'Agent 2 (Infrastructure Investigator) instantiated with exclusive PID 8842',
-            agentName: customClusterObj?.assigned_agent || (isClusterA ? 'Agent 1: Lane & Actuator Investigator' : 'Agent 2: Infrastructure & Power Investigator'),
-            agentRole: isClusterA ? 'Vehicle Kinematics, Queue Order & Actuators' : 'Power Distribution & DC Busbar Thermals',
-            cluster: customClusterObj?.cluster_id || targetCluster,
-            tokensUsed: isClusterA ? 1140 : 1480,
-            maxTokens: 2000,
-            activeTool: isClusterA 
-              ? 'mcp-terminal-telemetry::get_lane_queue_order(Lane-07)' 
-              : 'mcp-terminal-telemetry::get_station_electrical_metrics(BCSS-02)',
-            logs: isClusterA ? [
-              '🔒 Isolated sandbox container initialized [0% Cross-Contamination]',
-              '📦 Ingested schema: [LaneTopology, ActuatorCAN, HeadwayRadar]',
-              '🔍 Lead stalled vehicle identified: AGV-104 (Velocity: 0.0 m/s)',
-              '⚡ Querying Actuator PLC register: 0x7E1 under 275 bar relief pressure'
-            ] : [
-              '🔒 Isolated sandbox container initialized [0% Cross-Contamination]',
-              '📦 Ingested schema: [HV_Switchgear, CoolantLoop, SubstationBusbar]',
-              '🌡️ DC Busbar thermal anomaly flagged: 82.4°C (Safe limit: 70.0°C)',
-              '⚡ Decoding PLC breaker trip register: 0x9B4 (OVERTEMP_THERMAL_CUTOFF)'
-            ]
+    const finish = () => {
+      isSimulatingRef.current = false;
+      setIsSimulating(false);
+      activeStreamCleanupRef.current = null;
+    };
+
+    activeStreamCleanupRef.current = streamInvestigation(
+      clusterId,
+      (event: StreamEvent) => {
+        if (event.node === 'complete') {
+          const result: InvestigateResult = event.output;
+          if (result.dockets.length === 0) {
+            setMessages(prev => [...prev, {
+              id: `docket-empty-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `⚠️ Investigation finished but produced no docket — check that ${clusterLabel} still exists in incident_clusters.`,
+            }]);
+          } else {
+            result.dockets.forEach((docket, i) => {
+              setMessages(prev => [...prev, {
+                id: `docket-${Date.now()}-${i}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: `📋 **Investigation complete:** synthesized into a Human Review Docket.`,
+                docket,
+              }]);
+            });
           }
-        };
-        setMessages(prev => [...prev, spawnMsg]);
+          finish();
+          return;
+        }
 
-        // Step 3: Synthesized Review Docket
-        const t3 = setTimeout(() => {
-          const docketData = isClusterA ? INITIAL_DOCKETS[0] : INITIAL_DOCKETS[1];
-          const docketMsg: ChatMessage = {
-            id: `docket-${Date.now()}`,
+        if (event.node.endsWith('_investigator')) {
+          const finding = event.output.investigator_findings?.[0];
+          if (!finding) return;
+          setMessages(prev => [...prev, {
+            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
-            text: `📋 **Stage 3 & 4 Complete:** Multi-agent investigation synthesized into a consolidated Human Review Docket backed by **100% verified hardware proof**.`,
-            docket: {
-              ...docketData,
-              title: customClusterObj ? customClusterObj.name : docketData.title,
-              clusterId: customClusterObj ? customClusterObj.cluster_id : docketData.clusterId,
-            }
-          };
-          setMessages(prev => [...prev, docketMsg]);
-          isSimulatingRef.current = false;
-          setIsSimulating(false);
-        }, 1800);
-
-        timeoutsRef.current.push(t3);
-      }, 1000);
-
-      timeoutsRef.current.push(t2);
-    }, 600);
-
-    timeoutsRef.current.push(t1);
+            isSpawningAnimation: true,
+            spawningProgress: {
+              stage: 2,
+              stageText: `${event.node} finished investigating ${finding.cluster_name} (${finding.incident_id})`,
+              agentName: event.node,
+              agentRole: finding.title,
+              cluster: finding.incident_id,
+              tokensUsed: 100,
+              maxTokens: 100,
+              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
+              logs: [
+                `🔍 Root cause: ${finding.root_cause}`,
+                ...((finding.evidence_items as string[]) || []).map((e) => `📌 ${e}`),
+              ],
+            },
+          }]);
+        } else if (event.node === 'correlation') {
+          const groups = event.output.correlation?.linked_groups || [];
+          if (groups.length > 0) {
+            setMessages(prev => [...prev, {
+              id: `corr-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `🔗 **Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => g.reason).join('; ')}`,
+            }]);
+          }
+        }
+      },
+      () => {
+        setMessages(prev => [...prev, {
+          id: `error-${Date.now()}`,
+          sender: 'assistant',
+          timestamp: timeNow(),
+          text: `⚠️ **Connection error** — could not reach the agent backend. Is \`uvicorn agent.server:app\` running on port 8000?`,
+        }]);
+        finish();
+      }
+    );
   };
 
   // -------------------------------------------------------------
@@ -339,11 +356,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const currentText = inputValue;
     setInputValue('');
 
-    const targetCluster = (lower.includes('bcss') || lower.includes('cluster b') || lower.includes('charger') || lower.includes('thermal') || lower.includes('0008'))
-      ? 'Cluster B'
-      : 'Cluster A';
+    // Simple keyword heuristic to a real cluster_id — not real NLU intent
+    // parsing, just enough to route a free-text query somewhere sensible.
+    let clusterId: string | undefined;
+    if (lower.includes('bcss') || lower.includes('charger') || lower.includes('thermal') || lower.includes('cluster b')) {
+      clusterId = 'CLUSTER-B';
+    } else if (lower.includes('sector a') || lower.includes('battery') || lower.includes('soc') || lower.includes('cluster c')) {
+      clusterId = 'CLUSTER-C';
+    } else if (lower.includes('lane 7') || lower.includes('twistlock') || lower.includes('cluster a')) {
+      clusterId = 'CLUSTER-A';
+    } else if (lower.includes('lane 4') || lower.includes('lidar') || lower.includes('cluster d')) {
+      clusterId = 'CLUSTER-D';
+    }
+    // No match -> undefined -> investigate every active cluster.
 
-    triggerAgentSpawningSimulation(currentText, targetCluster);
+    triggerAgentSpawningSimulation(currentText, clusterId);
   };
 
   // Handle Authorize Action
@@ -416,6 +443,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const handleReset = () => {
     clearAllTimeouts();
+    activeStreamCleanupRef.current?.();
+    activeStreamCleanupRef.current = null;
     isSimulatingRef.current = false;
     hasAutoTriggeredRef.current = null;
     setIsSimulating(false);
@@ -465,7 +494,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {/* Action Trigger Buttons */}
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => triggerAgentSpawningSimulation(undefined, 'Cluster A', selectedCluster)}
+            onClick={() => triggerAgentSpawningSimulation(undefined, selectedCluster?.cluster_id)}
             disabled={isSimulating}
             className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition-all shadow-sm whitespace-nowrap ${
               isSimulating
@@ -878,25 +907,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           QUICK SCENARIO TRIGGERS:
         </span>
         <button
-          onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (Cluster A)', 'Cluster A')}
+          onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (CLUSTER-A)', 'CLUSTER-A')}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          🔍 Lane 7 Jam (Cluster A)
+          🔍 Lane 7 Jam (CLUSTER-A)
         </button>
         <button
-          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (Cluster B)', 'Cluster B')}
+          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (CLUSTER-B)', 'CLUSTER-B')}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          ⚡ BCSS-02 Charger Trip (Cluster B)
+          ⚡ BCSS-02 Charger Trip (CLUSTER-B)
         </button>
         <button
-          onClick={() => triggerAgentSpawningSimulation('Simulate full multi-agent triage and context isolation', 'Cluster A')}
+          onClick={() => triggerAgentSpawningSimulation('Investigate Sector A Battery Starvation (CLUSTER-C)', 'CLUSTER-C')}
+          disabled={isSimulating}
+          className="text-xs font-mono bg-white hover:bg-emerald-50 text-emerald-900 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
+        >
+          🔋 Sector A Starvation (CLUSTER-C)
+        </button>
+        <button
+          onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active cluster', undefined)}
           disabled={isSimulating}
           className="text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-xl transition-colors whitespace-nowrap shadow-sm"
         >
-          ⚡ Full Spawning Demo
+          ⚡ Full Spawning Demo (all clusters)
         </button>
       </div>
 
