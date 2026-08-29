@@ -23,16 +23,32 @@ import {
   XCircle,
   AlertTriangle,
   ArrowRightCircle,
-  Sliders
+  Sliders,
+  Mail,
+  Loader2
 } from 'lucide-react';
 import { DocketItem, ClusterWithAlerts } from '../types';
-import { streamInvestigation, InvestigateResult, StreamEvent } from '../lib/api';
+import { streamInvestigation, InvestigateResult, StreamEvent, generateDraftEmail, DraftEmailResponse } from '../lib/api';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ActionReviewState {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'OVERRIDDEN';
   reason?: string;
   overrideText?: string;
+  emailDispatched?: boolean;
+  emailRecipient?: string;
+  emailSubject?: string;
+}
+
+interface DraftEmailModalState {
+  isOpen: boolean;
+  actionText: string;
+  docket?: DocketItem;
+  recipient: string;
+  subject: string;
+  priority: string;
+  body: string;
+  reasoning?: string;
 }
 
 interface ChatMessage {
@@ -167,6 +183,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [actionStates, setActionStates] = useState<Record<string, ActionReviewState>>({});
   const [activeFormMode, setActiveFormMode] = useState<Record<string, 'reject' | 'override' | null>>({});
   const [tempInput, setTempInput] = useState<Record<string, string>>({});
+  const [authorizingAction, setAuthorizingAction] = useState<Record<string, boolean>>({});
+  const [draftEmailModal, setDraftEmailModal] = useState<DraftEmailModalState | null>(null);
 
   const toggleTrajectory = (turnId: string) => {
     setExpandedTrajectories(prev => ({
@@ -597,8 +615,36 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     triggerAgentSpawningSimulation(currentText, clusterId);
   };
 
-  // Handle Authorize Action
-  const handleAuthorizeAction = (actionText: string) => {
+  // Handle Authorize Action — uses LLM to detect if field crew / technician dispatch email is needed
+  const handleAuthorizeAction = async (actionText: string, docket?: DocketItem) => {
+    if (authorizingAction[actionText]) return;
+    setAuthorizingAction(prev => ({ ...prev, [actionText]: true }));
+
+    try {
+      const draft = await generateDraftEmail(actionText, docket);
+      if (draft.requires_dispatch_email) {
+        setDraftEmailModal({
+          isOpen: true,
+          actionText,
+          docket,
+          recipient: draft.recipient,
+          subject: draft.subject,
+          priority: draft.priority || docket?.severity || 'HIGH',
+          body: draft.body,
+          reasoning: draft.reasoning,
+        });
+        setAuthorizingAction(prev => ({ ...prev, [actionText]: false }));
+        return;
+      }
+    } catch (err) {
+      console.warn('Draft email generation failed, falling back to direct authorization:', err);
+    }
+
+    setAuthorizingAction(prev => ({ ...prev, [actionText]: false }));
+    executeDirectAuthorization(actionText);
+  };
+
+  const executeDirectAuthorization = (actionText: string) => {
     setActionStates(prev => ({
       ...prev,
       [actionText]: { status: 'ACCEPTED' }
@@ -610,10 +656,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: `dispatch-confirm-${Date.now()}`,
         sender: 'assistant',
         timestamp: timeNow(),
-        text: `**Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
+        text: `**Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Execution Channel:** PSA Automated Terminal Operating System (TOS)\n- **Status:** **DISPATCHED & EXECUTING (ETA: Immediate)**`
       };
       setMessages(prev => [...prev, confirmMsg]);
     }, 400);
+
+    timeoutsRef.current.push(t);
+  };
+
+  const handleConfirmSendEmail = () => {
+    if (!draftEmailModal) return;
+    const { actionText, recipient, subject, priority } = draftEmailModal;
+
+    setActionStates(prev => ({
+      ...prev,
+      [actionText]: {
+        status: 'ACCEPTED',
+        emailDispatched: true,
+        emailRecipient: recipient,
+        emailSubject: subject,
+      }
+    }));
+    setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
+    setDraftEmailModal(null);
+
+    const t = setTimeout(() => {
+      const emailConfirmMsg: ChatMessage = {
+        id: `email-dispatch-confirm-${Date.now()}`,
+        sender: 'assistant',
+        timestamp: timeNow(),
+        text: `**Operational Action Authorized & Dispatch Email Sent**\n- **Directive:** "${actionText}"\n- **Email Recipient:** \`${recipient}\`\n- **Subject:** \`${subject}\`\n- **Priority:** **${priority}**\n- **Dispatch Channel:** PSA Tuas Field Maintenance Dispatch Gateway (WO-88219)\n- **Status:** **EMAIL TRANSMITTED & ACKNOWLEDGED • Field Crew Dispatched (ETA: 3m 30s)**`
+      };
+      setMessages(prev => [...prev, emailConfirmMsg]);
+    }, 300);
 
     timeoutsRef.current.push(t);
   };
@@ -971,7 +1046,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           {/* Action Status Badges or Trigger Buttons */}
                                           {isAccepted && (
                                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
-                                              <Check className="w-3.5 h-3.5" /> Authorized & Dispatched
+                                              <Check className="w-3.5 h-3.5" />
+                                              <span>{state.emailDispatched ? 'Authorized & Email Dispatched' : 'Authorized & Dispatched'}</span>
                                             </div>
                                           )}
 
@@ -990,10 +1066,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           {state.status === 'PENDING' && !mode && (
                                             <div className="flex items-center space-x-1 shrink-0">
                                               <button
-                                                onClick={() => handleAuthorizeAction(action)}
-                                                className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer"
+                                                onClick={() => handleAuthorizeAction(action, fMsg.docket)}
+                                                disabled={authorizingAction[action]}
+                                                className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer disabled:opacity-75"
                                               >
-                                                <ArrowRightCircle className="w-3 h-3" /> Authorize
+                                                {authorizingAction[action] ? (
+                                                  <>
+                                                    <Loader2 className="w-3 h-3 animate-spin" /> Evaluating...
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <ArrowRightCircle className="w-3 h-3" /> Authorize
+                                                  </>
+                                                )}
                                               </button>
                                               <button
                                                 onClick={() => {
@@ -1020,6 +1105,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         </div>
 
                                         {/* Status Detail Sub-notes */}
+                                        {isAccepted && state.emailDispatched && state.emailRecipient && (
+                                          <div className="text-[11px] text-sky-800 bg-sky-50/80 p-2.5 rounded-lg border border-sky-200 font-mono space-y-1 animate-fadeIn">
+                                            <div className="font-bold flex items-center gap-1 text-sky-900">
+                                              <Mail className="w-3.5 h-3.5 text-sky-600" /> Dispatch Notification Email Transmitted
+                                            </div>
+                                            <div className="text-slate-600"><strong>To:</strong> {state.emailRecipient}</div>
+                                            <div className="text-slate-600 truncate"><strong>Subject:</strong> {state.emailSubject}</div>
+                                          </div>
+                                        )}
+
                                         {isRejected && state.reason && (
                                           <p className="text-[11px] text-rose-600 italic pl-3">
                                             Operator stated reason: "{state.reason}"
@@ -1240,6 +1335,160 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </button>
         </div>
       </form>
+
+      {/* AI Draft Email Modal Overlay */}
+      {draftEmailModal && draftEmailModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh] animate-scaleUp">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-slate-100 font-sans tracking-wide">
+                      AI DISPATCH NOTIFICATION COMPOSER
+                    </h3>
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                      draftEmailModal.priority === 'CRITICAL'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}>
+                      {draftEmailModal.priority} PRIORITY
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    Technician field dispatch detected • Review & approve before transmission
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDraftEmailModal(null)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Context / Reason callout */}
+              <div className="bg-sky-50/80 border border-sky-200 rounded-xl p-3 space-y-1">
+                <div className="text-[11px] font-bold text-sky-900 flex items-center gap-1.5 font-mono">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                  <span>AI FIELD INTERVENTION ANALYSIS</span>
+                </div>
+                <p className="text-slate-700 leading-relaxed text-xs">
+                  {draftEmailModal.reasoning || "This operational directive requires on-site technician inspection and physical manual verification. An operational dispatch email draft has been prepared for the field maintenance crew."}
+                </p>
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-3.5 font-sans">
+                {/* Recipient Input */}
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold font-mono text-slate-700">
+                    Recipients (To):
+                  </label>
+                  <input
+                    type="text"
+                    value={draftEmailModal.recipient}
+                    onChange={(e) => setDraftEmailModal(prev => prev ? { ...prev, recipient: e.target.value } : null)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                    placeholder="e.g. maintenance-lead@psa.sg, field-crew@psa.sg"
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setDraftEmailModal(prev => prev ? { ...prev, recipient: `${prev.recipient ? prev.recipient + ', ' : ''}tuas-shift-lead@psa.sg` } : null)}
+                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-300 font-mono transition-colors cursor-pointer"
+                    >
+                      + Tuas Shift Lead
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDraftEmailModal(prev => prev ? { ...prev, recipient: `${prev.recipient ? prev.recipient + ', ' : ''}qc03-crane-techs@psa.sg` } : null)}
+                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-300 font-mono transition-colors cursor-pointer"
+                    >
+                      + QC-03 Techs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDraftEmailModal(prev => prev ? { ...prev, recipient: `${prev.recipient ? prev.recipient + ', ' : ''}safety-officer@psa.sg` } : null)}
+                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-300 font-mono transition-colors cursor-pointer"
+                    >
+                      + Safety Duty Officer
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subject Line Input */}
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold font-mono text-slate-700">
+                    Subject Line:
+                  </label>
+                  <input
+                    type="text"
+                    value={draftEmailModal.subject}
+                    onChange={(e) => setDraftEmailModal(prev => prev ? { ...prev, subject: e.target.value } : null)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                    placeholder="Email subject..."
+                  />
+                </div>
+
+                {/* Email Body Textarea */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-bold font-mono text-slate-700">
+                      Dispatch Directives & Message Body:
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">Editable operational directives</span>
+                  </div>
+                  <textarea
+                    rows={8}
+                    value={draftEmailModal.body}
+                    onChange={(e) => setDraftEmailModal(prev => prev ? { ...prev, body: e.target.value } : null)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 leading-relaxed resize-y"
+                    placeholder="Compose or modify dispatch email instructions..."
+                  />
+                </div>
+              </div>
+
+              {/* Operational disclaimer */}
+              <div className="flex items-center gap-2 text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  Clicking <strong>Approve & Send Email</strong> confirms authorization and records the broadcast transmission.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="bg-slate-50 border-t border-slate-200 px-5 py-3.5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setDraftEmailModal(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200/80 rounded-xl transition-all cursor-pointer font-sans"
+              >
+                Cancel & Return
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmSendEmail}
+                  className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer font-sans"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Approve & Send Email
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

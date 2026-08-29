@@ -25,15 +25,18 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
 
+import os
+import re
+import sys
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
-import sys
 
 # Force immediate unbuffered flushing to terminal
 if hasattr(sys.stdout, "reconfigure"):
@@ -171,3 +174,101 @@ async def investigate_stream(cluster_id: Optional[str] = Query(default=None)) ->
         yield f"data: {json.dumps({'node': 'complete', 'output': _finalize(final_state)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+class DraftEmailRequest(BaseModel):
+    action: str
+    docket: Optional[dict[str, Any]] = None
+
+
+class DraftEmailResponse(BaseModel):
+    requires_dispatch_email: bool = Field(
+        description="True if the action requires human field technician/crew dispatch, manual inspection, or physical on-site intervention. False if it is a purely automated software/TOS command."
+    )
+    recipient: str = Field(
+        default="tuas-maintenance-lead@psa.sg, field-crew-sectorA@psa.sg",
+        description="Comma-separated email addresses appropriate for this incident type and location."
+    )
+    subject: str = Field(
+        description="Clear, urgent email subject line including equipment ID, issue, and location."
+    )
+    priority: str = Field(
+        description="CRITICAL, HIGH, MEDIUM, or LOW"
+    )
+    body: str = Field(
+        description="A concise, professional single-paragraph email body addressing the field maintenance team with the specific directives, target asset/lane, key fault context, and safety precautions."
+    )
+    reasoning: str = Field(
+        description="Short reasoning for classification and email content."
+    )
+
+
+@app.post("/api/actions/draft-email", response_model=DraftEmailResponse)
+async def draft_email(body: DraftEmailRequest) -> DraftEmailResponse:
+    print(f"\n✉️ [API DRAFT EMAIL] Action: {body.action[:80]}...", flush=True)
+    logger.info("POST /api/actions/draft-email action=%s", body.action)
+    try:
+        from langchain_openai import ChatOpenAI
+
+        model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        model = ChatOpenAI(model=model_name, temperature=0.2)
+        structurer = model.with_structured_output(DraftEmailResponse, method="function_calling")
+
+        docket_ctx = body.docket or {}
+        title = docket_ctx.get("title", "Port Incident")
+        severity = docket_ctx.get("severity", "HIGH")
+        root_cause = docket_ctx.get("rootCause", "SCADA sensor anomaly")
+        impact = docket_ctx.get("impact", "Terminal throughput constrained")
+        evidence = docket_ctx.get("physicalEvidence", [])
+        registers = docket_ctx.get("plcRegisters", [])
+
+        prompt = (
+            "You are the PSA Tuas Port Operational Copilot AI.\n"
+            "An incident investigation is ongoing in the automated container terminal.\n\n"
+            f"Incident Docket Context:\n"
+            f"- Incident Title: {title}\n"
+            f"- Severity: {severity}\n"
+            f"- Downstream Impact: {impact}\n"
+            f"- Verified Root Cause: {root_cause}\n"
+            f"- Decoded PLC Registers: {json.dumps(registers)}\n"
+            f"- Multimodal Evidence: {json.dumps([e.get('text', '') for e in evidence if isinstance(e, dict)])}\n\n"
+            f"Authorized Operator Action Directive:\n"
+            f"\"{body.action}\"\n\n"
+            "Task:\n"
+            "1. Evaluate if this action requires human field technician/crew dispatch, manual inspection, or physical maintenance intervention on site.\n"
+            "2. If YES (human technician dispatch required):\n"
+            "   - set requires_dispatch_email = true\n"
+            "   - specify appropriate recipient (e.g. tuas-maintenance-lead@psa.sg, field-crew-sectorA@psa.sg)\n"
+            "   - compose an urgent, specific Subject line with the asset ID and location\n"
+            "   - write a single concise paragraph (3-5 sentences) for the email body. Address the maintenance team directly, concisely summarizing the asset location, the exact diagnostic root cause / fault context, the specific physical inspection directive to execute, and safety precautions (such as keeping the vehicle halted/lane isolated). Do NOT use bullet points, greetings on their own line, or multiple paragraphs—write one coherent, natural single paragraph.\n"
+            "3. If NO (purely automated software command, TOS queue reroute, remote reset with no human crew needed):\n"
+            "   - set requires_dispatch_email = false."
+        )
+
+        result: DraftEmailResponse = await structurer.ainvoke(prompt)
+        print(f"✅ [API DRAFT EMAIL] requires_dispatch={result.requires_dispatch_email} subject={result.subject}", flush=True)
+        return result
+    except Exception as exc:
+        print(f"⚠️ [API DRAFT EMAIL FALLBACK] {exc}", flush=True)
+        logger.error("Draft email LLM generation failed: %s", exc)
+        is_field = bool(
+            re.search(
+                r"dispatch|technician|crew|inspect|maintenance|manual|engineer|mechanic|send|lock|pin",
+                body.action,
+                re.IGNORECASE,
+            )
+        )
+        docket_title = body.docket.get("title", "Tuas Terminal Operations") if body.docket else "Tuas Operations"
+        return DraftEmailResponse(
+            requires_dispatch_email=is_field,
+            recipient="tuas-maintenance-lead@psa.sg, field-crew-sectorA@psa.sg",
+            subject=f"[URGENT WORK ORDER] Technician Dispatch: Field Action Required ({docket_title})",
+            priority="HIGH",
+            body=(
+                f"Hi Maintenance Team, please urgently dispatch a field technician to carry out the authorized directive: {body.action}. "
+                f"This follows an active incident ({docket_title}) where root cause analysis verified {body.docket.get('rootCause', 'an active SCADA fault') if body.docket else 'a mechanical/actuator fault'}. "
+                f"Please ensure all safety interlocks and lane isolation protocols are adhered to during on-site inspection and confirm resolution back to Tuas Operations Control upon completion."
+            ),
+            reasoning="Determined via operational dispatch classifier.",
+        )
+
