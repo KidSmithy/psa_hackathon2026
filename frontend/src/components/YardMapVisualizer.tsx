@@ -275,6 +275,13 @@ export const YardMapVisualizer: React.FC<YardMapVisualizerProps> = ({
         </div>
       </div>
 
+      {/* Hint Banner */}
+      <div className="bg-tuas-teal/10 border-b border-tuas-teal/30 px-4 py-2 text-center">
+        <span className="text-tuas-teal text-[11px] font-bold tracking-wide">
+          Double-click any of the highlighted AGVs, which will take you to the incident queue page.
+        </span>
+      </div>
+
       {/* Main SVG Viewport */}
       <div 
         ref={containerRef}
