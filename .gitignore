@@ -92,3 +92,13 @@ Thumbs.db
 *.temp
 /backend/video
 backend/config.env
+
+# Kept locally only, not tracked in the repo (README.md is the exception)
+DEMO_SCRIPT.md
+DESIGN.md
+overall.md
+backend/OPEN_CLUSTERING.md
+backend/database_schema.md
+backend/mcp/mcp_build_instructions.md
+backend/mcp/mcp_setup_and_supabase_mapping.md
+backend/mcp/table_data_explanation.md
