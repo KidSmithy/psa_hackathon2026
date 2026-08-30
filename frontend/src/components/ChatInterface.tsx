@@ -252,13 +252,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const thoughtScrollRef = useRef<HTMLDivElement>(null);
   const toolsScrollRef = useRef<HTMLDivElement>(null);
 
-  const presetRejectionReasons = [
-    'Crew engaged on Berth 4 priority',
-    'Hardware false positive / nominal',
-    'Alternative bypass route preferred',
-    'Already mitigated manually'
-  ];
-
   const clearAllTimeouts = () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
     timeoutsRef.current = [];
@@ -534,97 +527,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }, [selectedCluster?.cluster_id]);
 
 
-  // -------------------------------------------------------------
-  // Simulated Agent Re-Plan Flow upon Operator Rejection
-  // -------------------------------------------------------------
-  const triggerAgentReplanSimulation = (
-    rejectedAction: string,
-    reason: string,
-    docketTitle: string
-  ) => {
-    if (isSimulatingRef.current) return;
-    isSimulatingRef.current = true;
-    setIsSimulating(true);
-
-    const userMsg: ChatMessage = {
-      id: `replan-user-${Date.now()}`,
-      sender: 'user',
-      timestamp: timeNow(),
-      text: `**[HUMAN-IN-THE-LOOP OVERRIDE]** Rejected recommendation:\n*"${rejectedAction}"*\n\n**Operator Stated Reason:** ${reason}`,
-    };
-    setMessages(prev => [...prev, userMsg]);
-
-    // Step 1: Agent Re-planning Acknowledgment
-    const t1 = setTimeout(() => {
-      const replanAckMsg: ChatMessage = {
-        id: `replan-ack-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Operator Feedback Ingested: Re-planning Triggered**\n- Human constraint recorded: *"${reason}"*.\n- Coordinator updating topological graph & querying alternative MCP resolution pathways...`
-      };
-      setMessages(prev => [...prev, replanAckMsg]);
-
-      // Step 2: Dynamic Alternative Tool Query Animation
-      const t2 = setTimeout(() => {
-        const replanSpawnMsg: ChatMessage = {
-          id: `replan-spawn-${Date.now()}`,
-          sender: 'assistant',
-          timestamp: timeNow(),
-          isSpawningAnimation: true,
-          spawningProgress: {
-            stage: 3,
-            stageText: 'Agent 1 (Lane Investigator) exploring Lane 6 bypass & pressure purge cycles',
-            agentName: 'Agent 1: Lane & Actuator Investigator',
-            agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
-            cluster: 'Cluster A (Revision 2)',
-            toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
-          }
-        };
-        setMessages(prev => [...prev, replanSpawnMsg]);
-
-        // Step 3: Revised Docket Delivery (Rev. 2)
-        const t3 = setTimeout(() => {
-          const revisedDocket: DocketItem = {
-            id: 'DOCKET-A-REV2',
-            clusterId: 'Cluster A',
-            title: `${docketTitle} (REVISED PLAN - REV. 2)`,
-            severity: 'HIGH',
-            impact: 'Quay Crane QC-03 starvation mitigated via automated Lane 6 bypass.',
-            rootCause: 'Mechanical twistlock binding on lead AGV-104 isolated; alternate bypass enabled.',
-            physicalEvidence: [
-              { text: 'Lane 6 buffer verified clear (0 queued vehicles, 100% capacity available).', verified: true, timestamp: timeNow() },
-              { text: 'Automated hydraulic relief pulse sequence verified safe for remote triggering.', verified: true, timestamp: timeNow() }
-            ],
-            plcRegisters: [
-              { code: '0x7E1_PURGE', name: 'AUTO_RELIEF_PULSE_SEQ', description: 'Remote high-frequency solenoid oscillation', category: 'Actuator', status: 'READY_TO_EXECUTE' }
-            ],
-            recommendedActions: [
-              'Execute automated hydraulic back-pressure purge cycle (3x pulses @ 290 bar) on AGV-104.',
-              'Dynamic TOS reroute: Authorize AGV-109 and AGV-112 via Lane 6 bypass to Quay Crane QC-03 immediately.'
-            ]
-          };
-
-          const revisedDocketMsg: ChatMessage = {
-            id: `revised-docket-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            text: `**Revised Resolution Docket Synthesized (Rev. 2):**\nIncorporated your operational constraints. You can now authorize or adjust the alternative bypass actions below.`,
-            docket: revisedDocket
-          };
-          setMessages(prev => [...prev, revisedDocketMsg]);
-          isSimulatingRef.current = false;
-          setIsSimulating(false);
-        }, 1600);
-
-        timeoutsRef.current.push(t3);
-      }, 900);
-
-      timeoutsRef.current.push(t2);
-    }, 500);
-
-    timeoutsRef.current.push(t1);
-  };
-
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isSimulatingRef.current) return;
@@ -647,30 +549,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       [actionText]: { status: 'ACCEPTED' }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    const t = setTimeout(() => {
-      const confirmMsg: ChatMessage = {
-        id: `dispatch-confirm-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
-      };
-      setMessages(prev => [...prev, confirmMsg]);
-    }, 400);
-
-    timeoutsRef.current.push(t);
   };
 
-  // Handle Reject Action -> Trigger Re-plan
-  const handleConfirmRejectAction = (actionText: string, docketTitle: string) => {
-    const reason = tempInput[actionText]?.trim() || 'Rejected by Terminal Supervisor';
+  // Handle Reject Action
+  const handleRejectAction = (actionText: string) => {
     setActionStates(prev => ({
       ...prev,
-      [actionText]: { status: 'REJECTED', reason }
+      [actionText]: { status: 'REJECTED' }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    triggerAgentReplanSimulation(actionText, reason, docketTitle);
   };
 
   // Handle Override Action
@@ -681,18 +568,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       [actionText]: { status: 'OVERRIDDEN', overrideText }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    const t = setTimeout(() => {
-      const overrideConfirmMsg: ChatMessage = {
-        id: `override-confirm-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Manual Operator Override Dispatched**\n- **Original Plan:** "${actionText}"\n- **Supervisor Custom Directive:** *"${overrideText}"*\n- **Execution Channel:** Field Mobile Terminal & TOS Priority Queue\n- **Status:** **OVERRIDDEN COMMAND EXECUTED**`
-      };
-      setMessages(prev => [...prev, overrideConfirmMsg]);
-    }, 400);
-
-    timeoutsRef.current.push(t);
   };
 
   const handleResetAction = (actionText: string) => {
@@ -1012,7 +887,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           )}
 
                                           {state.status === 'PENDING' && !mode && (
-                                            <div className="flex items-center space-x-1 shrink-0">
+                                            <div className="flex items-center space-x-1.5 shrink-0">
                                               <button
                                                 onClick={() => handleAuthorizeAction(action)}
                                                 className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer"
@@ -1020,141 +895,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 <ArrowRightCircle className="w-3 h-3" /> Accept
                                               </button>
                                               <button
-                                                onClick={() => {
-                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'reject' }));
-                                                  setTempInput(prev => ({ ...prev, [action]: '' }));
-                                                }}
-                                                className="px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-all active:scale-95 cursor-pointer"
-                                                title="Reject recommendation and trigger re-plan"
+                                                onClick={() => handleRejectAction(action)}
+                                                className="px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-all active:scale-95 cursor-pointer"
+                                                title="Reject recommendation"
                                               >
                                                 Reject
-                                              </button>
-                                              <button
-                                                onClick={() => {
-                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'override' }));
-                                                  setTempInput(prev => ({ ...prev, [action]: action }));
-                                                }}
-                                                className="px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 border border-amber-200 rounded-lg transition-all active:scale-95 cursor-pointer"
-                                                title="Manually edit directive"
-                                              >
-                                                Edit
                                               </button>
                                             </div>
                                           )}
                                         </div>
-
-                                        {/* Status Detail Sub-notes */}
-
-                                        {isRejected && state.reason && (
-                                          <p className="text-[11px] text-rose-600 italic pl-3">
-                                            Operator stated reason: "{state.reason}"
-                                          </p>
-                                        )}
-
-                                        {isOverridden && state.overrideText && (
-                                          <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200 pl-3 font-mono">
-                                            Directive: "{state.overrideText}"
-                                          </p>
-                                        )}
-
-                                        {/* Inline Rejection Form */}
-                                        {mode === 'reject' && (
-                                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
-                                            <div className="flex items-center justify-between font-bold text-rose-800">
-                                              <span className="flex items-center gap-1">
-                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                                                Select Reason to Trigger Agent Re-Plan
-                                              </span>
-                                              <button
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="text-slate-400 hover:text-slate-600"
-                                              >
-                                                <X className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-1">
-                                              {presetRejectionReasons.map((preset, pIdx) => (
-                                                <button
-                                                  key={pIdx}
-                                                  type="button"
-                                                  onClick={() => setTempInput(prev => ({ ...prev, [action]: preset }))}
-                                                  className="text-[10px] bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 px-2 py-0.5 rounded transition-colors"
-                                                >
-                                                  {preset}
-                                                </button>
-                                              ))}
-                                            </div>
-
-                                            <input
-                                              type="text"
-                                              value={tempInput[action] || ''}
-                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                              placeholder="Or type custom rejection reason..."
-                                              className="w-full bg-white border border-rose-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                                            />
-
-                                            <div className="flex items-center justify-end gap-1.5 pt-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                              >
-                                                Cancel
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleConfirmRejectAction(action, fMsg.docket?.title || 'Incident')}
-                                                className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
-                                              >
-                                                <X className="w-3.5 h-3.5" /> Reject & Re-Plan
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {/* Inline Override Form */}
-                                        {mode === 'override' && (
-                                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
-                                            <div className="flex items-center justify-between font-bold text-amber-900">
-                                              <span className="flex items-center gap-1">
-                                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                                                Edit Dispatch Directive
-                                              </span>
-                                              <button
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="text-slate-400 hover:text-slate-600"
-                                              >
-                                                <X className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
-
-                                            <textarea
-                                              rows={2}
-                                              value={tempInput[action] || ''}
-                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                              placeholder="Enter modified operational dispatch instruction..."
-                                              className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
-                                            />
-
-                                            <div className="flex items-center justify-end gap-1.5 pt-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                              >
-                                                Cancel
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleConfirmOverrideAction(action)}
-                                                className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
-                                              >
-                                                <Send className="w-3.5 h-3.5" /> Dispatch Override
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
                                     );
                                   })}
