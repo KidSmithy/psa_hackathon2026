@@ -1100,7 +1100,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <div className="font-bold flex items-center justify-between flex-wrap gap-2">
                 <span className="flex items-center gap-1.5 text-xs text-sky-950">
                   <Activity className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
-                  <span>Agent Triage in Progress (LangGraph & MCP)</span>
+                  <span>Agentic Workflow In Progress (LangGraph & MCP)</span>
                 </span>
                 <span className="text-[10px] bg-sky-200/80 px-2 py-0.5 rounded text-sky-800 font-bold uppercase tracking-wider">
                   LIVE STREAMING
