@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from . import yard
+from . import problem_types, yard
 
 SCHEMA_VERSION = "1.1.0"
 
@@ -20,11 +20,31 @@ DEFAULT_SPATIAL_WINDOW_M = 40.0
 DEFAULT_TEMPORAL_WINDOW_S = 20.0
 DEFAULT_TOPOLOGY_MAX_HOPS = 1
 DEFAULT_MIN_PTS = 1
-CLUSTERING_METHOD = "st-dbscan+topology"
+
+# Open clustering: an alert only joins an incident if it is the SAME KIND of
+# problem as well as spatio-temporally close. Alerts whose problem type cannot
+# be established stay singletons instead of being absorbed by a neighbour.
+# Set group_by_problem_type=False in the config to get the old purely
+# spatio-temporal behaviour back.
+DEFAULT_GROUP_BY_PROBLEM_TYPE = True
+
+CLUSTERING_METHOD_SPATIOTEMPORAL = "st-dbscan+topology"
+CLUSTERING_METHOD_OPEN = "open-problem-type+st-dbscan+topology"
+CLUSTERING_METHOD = CLUSTERING_METHOD_OPEN
 
 # Chain guard limits: cuts run-away agglomerations at widest temporal gap
 DEFAULT_MAX_CLUSTER_ALERTS = 12
 DEFAULT_MAX_CLUSTER_DWELL_S = 300.0
+
+# With the problem-type gate on, the type itself does most of the separating,
+# so the time/dwell windows can be much wider without producing blob clusters:
+# a lane jam and a charger trip 30 seconds apart no longer merge regardless of
+# how wide the window is. These are applied only for keys the caller did not
+# set explicitly (see resolve_config).
+OPEN_MODE_DEFAULTS: Dict[str, Any] = {
+    "temporal_window_s": 180.0,
+    "max_cluster_dwell_s": 900.0,
+}
 
 # ---- Priority & Urgency Scoring Configuration --------------------------------
 FAULT_SEVERITY: Dict[str, float] = {
@@ -129,6 +149,32 @@ def is_safety_alert(alert: Dict[str, Any]) -> bool:
     return False
 
 
+# ---- Config Resolution -------------------------------------------------------
+def resolve_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Fills a partial config with defaults. When the problem-type gate is on, the
+    time-based defaults widen (OPEN_MODE_DEFAULTS) — but only for keys the
+    caller left unset, so an explicit --temporal-window always wins.
+    """
+    cfg = dict(config or {})
+    group_by_problem_type = cfg.get("group_by_problem_type", DEFAULT_GROUP_BY_PROBLEM_TYPE)
+
+    base: Dict[str, Any] = {
+        "spatial_window_m": DEFAULT_SPATIAL_WINDOW_M,
+        "temporal_window_s": DEFAULT_TEMPORAL_WINDOW_S,
+        "topology_max_hops": DEFAULT_TOPOLOGY_MAX_HOPS,
+        "min_pts": DEFAULT_MIN_PTS,
+        "max_cluster_alerts": DEFAULT_MAX_CLUSTER_ALERTS,
+        "max_cluster_dwell_s": DEFAULT_MAX_CLUSTER_DWELL_S,
+    }
+    if group_by_problem_type:
+        base.update(OPEN_MODE_DEFAULTS)
+
+    resolved = {k: cfg.get(k, v) for k, v in base.items()}
+    resolved["group_by_problem_type"] = group_by_problem_type
+    return resolved
+
+
 # ---- Step 2: Clustering Logic ------------------------------------------------
 def linked(
     a: Dict[str, Any],
@@ -136,17 +182,24 @@ def linked(
     spatial_window_m: float = DEFAULT_SPATIAL_WINDOW_M,
     temporal_window_s: float = DEFAULT_TEMPORAL_WINDOW_S,
     topology_max_hops: int = DEFAULT_TOPOLOGY_MAX_HOPS,
+    group_by_problem_type: bool = DEFAULT_GROUP_BY_PROBLEM_TYPE,
 ) -> Tuple[bool, Optional[str]]:
-    """The ST-DBSCAN + topology neighbourhood predicate."""
+    """
+    The neighbourhood predicate. In open mode the problem type is checked
+    first: two alerts of different kinds never join, no matter how close they
+    are, and an alert whose type is unknown never joins anything at all.
+    """
+    if group_by_problem_type and not problem_types.same_problem_type(a, b):
+        return False, None
     dt = abs((parse_ts(a["raisedAt"]) - parse_ts(b["raisedAt"])).total_seconds())
     if dt > temporal_window_s:
         return False, None
     if dist(a, b) <= spatial_window_m:
-        return True, "spatial"
+        return True, "problem_type+spatial" if group_by_problem_type else "spatial"
     res_a = get_resource_id(a)
     res_b = get_resource_id(b)
     if res_a and res_b and yard.topology_linked(res_a, res_b, topology_max_hops):
-        return True, "topology"
+        return True, "problem_type+topology" if group_by_problem_type else "topology"
     return False, None
 
 
@@ -158,8 +211,14 @@ def cluster_alerts(
     min_pts: int = DEFAULT_MIN_PTS,
     max_cluster_alerts: int = DEFAULT_MAX_CLUSTER_ALERTS,
     max_cluster_dwell_s: float = DEFAULT_MAX_CLUSTER_DWELL_S,
+    group_by_problem_type: bool = DEFAULT_GROUP_BY_PROBLEM_TYPE,
 ) -> List[List[Dict[str, Any]]]:
-    """Union-find single-link agglomeration over neighbourhood predicate with chain-guard."""
+    """
+    Union-find single-link agglomeration over the neighbourhood predicate with
+    chain-guard. The number of clusters is not fixed and not configured: it
+    falls out of the data, and an alert that links to nothing comes back as a
+    one-member group (a singleton incident).
+    """
     n = len(alerts)
     if n == 0:
         return []
@@ -180,7 +239,10 @@ def cluster_alerts(
     degree = [0] * n
     for i in range(n):
         for j in range(i + 1, n):
-            ok, _ = linked(alerts[i], alerts[j], spatial_window_m, temporal_window_s, topology_max_hops)
+            ok, _ = linked(
+                alerts[i], alerts[j], spatial_window_m, temporal_window_s,
+                topology_max_hops, group_by_problem_type,
+            )
             if ok:
                 degree[i] += 1
                 degree[j] += 1
@@ -192,7 +254,10 @@ def cluster_alerts(
             if degree[i] + 1 < min_pts:
                 continue
             for j in range(n):
-                if i != j and linked(alerts[i], alerts[j], spatial_window_m, temporal_window_s, topology_max_hops)[0]:
+                if i != j and linked(
+                    alerts[i], alerts[j], spatial_window_m, temporal_window_s,
+                    topology_max_hops, group_by_problem_type,
+                )[0]:
                     union(i, j)
 
     groups = defaultdict(list)
@@ -466,8 +531,20 @@ def build_cluster(
 
     inc_id = generate_incident_id(group, seq)
 
-    temporal_window_s = (config or {}).get("temporal_window_s", DEFAULT_TEMPORAL_WINDOW_S)
-    spatial_window_m = (config or {}).get("spatial_window_m", DEFAULT_SPATIAL_WINDOW_M)
+    cfg = resolve_config(config)
+    temporal_window_s = cfg["temporal_window_s"]
+    spatial_window_m = cfg["spatial_window_m"]
+    group_by_problem_type = cfg["group_by_problem_type"]
+
+    # Problem type drives both the incident's generated name and which
+    # investigator owns it — no hand-maintained cluster-id -> agent table.
+    ptype = problem_types.dominant_problem_type(group)
+    ptype_counts: Dict[str, int] = defaultdict(int)
+    for a in group:
+        ptype_counts[problem_types.problem_type(a)] += 1
+    domain = problem_types.domain_for(ptype)
+    assigned_agent = problem_types.agent_for(ptype)
+    name = problem_types.cluster_name(ptype, feature, len(group))
 
     # Cross-reference overlapping safety escalations
     coincident = [
@@ -483,9 +560,17 @@ def build_cluster(
     return {
         "schemaVersion": SCHEMA_VERSION,
         "incidentId": inc_id,
+        "name": name,
         "createdAt": fmt_ts(created),
+        "problemType": ptype,
+        "problemTypeLabel": problem_types.PROBLEM_TYPE_LABEL.get(ptype, ptype),
+        "problemTypeMix": dict(sorted(ptype_counts.items())),
+        "isSingleton": len(group) == 1,
+        "domain": domain,
+        "assignedAgent": assigned_agent,
         "clustering": {
-            "method": CLUSTERING_METHOD,
+            "method": CLUSTERING_METHOD_OPEN if group_by_problem_type else CLUSTERING_METHOD_SPATIOTEMPORAL,
+            "groupedByProblemType": group_by_problem_type,
             "spatialWindowMeters": spatial_window_m,
             "temporalWindowSeconds": temporal_window_s,
             "topologyMatch": topo,
@@ -504,8 +589,8 @@ def build_cluster(
             "priorityCombination": COMBINE_METHOD,
             "priorityBreakdown": breakdown,
             "chainGuardLimits": {
-                "maxAlerts": (config or {}).get("max_cluster_alerts", DEFAULT_MAX_CLUSTER_ALERTS),
-                "maxDwellSeconds": (config or {}).get("max_cluster_dwell_s", DEFAULT_MAX_CLUSTER_DWELL_S),
+                "maxAlerts": cfg["max_cluster_alerts"],
+                "maxDwellSeconds": cfg["max_cluster_dwell_s"],
             },
             "coincidentSafetyEscalationIds": coincident,
             "memberAlertTimes": [a["raisedAt"] for a in group],
@@ -558,16 +643,22 @@ def run_clustering(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Main Stage 1 entry point:
-    Splits safety stream, clusters telemetry stream via ST-DBSCAN+topology,
-    computes priority scores, and returns (incident_clusters, safety_escalations).
+    Splits safety stream, clusters the telemetry stream via problem-type-gated
+    ST-DBSCAN+topology, computes priority scores, and returns
+    (incident_clusters, safety_escalations).
+
+    The cluster count is open: however many distinct problems the batch
+    contains is however many incidents come back, and alerts that correlate
+    with nothing come back as single-alert incidents.
     """
-    cfg = config or {}
-    spatial_window_m = cfg.get("spatial_window_m", DEFAULT_SPATIAL_WINDOW_M)
-    temporal_window_s = cfg.get("temporal_window_s", DEFAULT_TEMPORAL_WINDOW_S)
-    topology_max_hops = cfg.get("topology_max_hops", DEFAULT_TOPOLOGY_MAX_HOPS)
-    min_pts = cfg.get("min_pts", DEFAULT_MIN_PTS)
-    max_cluster_alerts = cfg.get("max_cluster_alerts", DEFAULT_MAX_CLUSTER_ALERTS)
-    max_cluster_dwell_s = cfg.get("max_cluster_dwell_s", DEFAULT_MAX_CLUSTER_DWELL_S)
+    cfg = resolve_config(config)
+    spatial_window_m = cfg["spatial_window_m"]
+    temporal_window_s = cfg["temporal_window_s"]
+    topology_max_hops = cfg["topology_max_hops"]
+    min_pts = cfg["min_pts"]
+    max_cluster_alerts = cfg["max_cluster_alerts"]
+    max_cluster_dwell_s = cfg["max_cluster_dwell_s"]
+    group_by_problem_type = cfg["group_by_problem_type"]
 
     safety_alerts = [a for a in alerts if is_safety_alert(a)]
     telemetry = [a for a in alerts if not is_safety_alert(a)]
@@ -586,6 +677,7 @@ def run_clustering(
         min_pts=min_pts,
         max_cluster_alerts=max_cluster_alerts,
         max_cluster_dwell_s=max_cluster_dwell_s,
+        group_by_problem_type=group_by_problem_type,
     )
 
     clusters = [build_cluster(g, i + 1, escalations, cfg) for i, g in enumerate(groups)]

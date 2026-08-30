@@ -8,10 +8,9 @@ import {
   Terminal, 
   CheckCircle2, 
   Check, 
-  RotateCcw, 
-  ArrowRight, 
-  Lock, 
-  Wrench, 
+  RotateCcw,
+  ArrowRight,
+  Wrench,
   Activity, 
   Zap,
   ArrowLeft,
@@ -47,10 +46,7 @@ interface ChatMessage {
     agentName: string;
     agentRole: string;
     cluster: string;
-    tokensUsed: number;
-    maxTokens: number;
-    activeTool: string;
-    logs: string[];
+    toolsUsed: { tool: string; args: Record<string, any> }[];
   };
   docket?: DocketItem;
 }
@@ -70,7 +66,7 @@ interface TurnGroup {
 const isTrajectoryMessage = (msg: ChatMessage): boolean => {
   if (msg.isSpawningAnimation) return true;
   if (msg.text && (
-    msg.text.includes('Coordinator Assessment Activated') ||
+    msg.text.includes('Assigning Investigator Agent') ||
     msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
     msg.text.includes('Correlation agent:') ||
     msg.text.includes('Dynamic Alternative Tool Query')
@@ -153,14 +149,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       sender: 'assistant',
       timestamp: timeNow(),
       text: selectedCluster
-        ? `**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\n**Target Incident:** **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\n**Live multi-agent triage & root-cause investigation running automatically...**`
-        : '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
+        ? `**Welcome to Port Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
+        : '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
   const [inputValue, setInputValue] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [expandedTrajectories, setExpandedTrajectories] = useState<Record<string, boolean>>({});
 
   // Human-in-the-loop Action States
@@ -209,6 +204,129 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
+  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
+  useEffect(() => {
+    if (!selectedCluster?.cluster_id) return;
+
+    let isSubscribed = true;
+    const clusterId = selectedCluster.cluster_id;
+
+    console.log('[ChatInterface] Triggering triage for:', clusterId);
+    setIsSimulating(true);
+
+    const userMsgText = `Run Agentic AI investigation for ${clusterId}`;
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      timestamp: timeNow(),
+      text: userMsgText,
+    };
+
+    const coordMsg: ChatMessage = {
+      id: `coord-${Date.now()}`,
+      sender: 'assistant',
+      timestamp: timeNow(),
+      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterId}** to the investigator agent assigned by its problem type.`
+    };
+
+    setMessages(prev => {
+      if (prev.some(m => m.text === userMsgText)) return prev;
+      return [...prev, userMsg, coordMsg];
+    });
+
+    const cleanup = streamInvestigation(
+      clusterId,
+      (event: StreamEvent) => {
+        if (!isSubscribed) return;
+        if (event.node === 'started') return;
+
+        if (event.node === 'error') {
+          setMessages(prev => [...prev, {
+            id: `stream-error-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+          }]);
+          setIsSimulating(false);
+          return;
+        }
+
+        if (event.node === 'complete') {
+          const result: InvestigateResult = event.output;
+          if (result.dockets.length === 0) {
+            setMessages(prev => [...prev, {
+              id: `docket-empty-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `Investigation finished but produced no docket — check that ${clusterId} still exists in incident_clusters.`,
+            }]);
+          } else {
+            result.dockets.forEach((docket, i) => {
+              setMessages(prev => [...prev, {
+                id: `docket-${Date.now()}-${i}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: '`Investigation complete:`',
+                docket: sanitizeDocket(docket),
+              }]);
+            });
+          }
+          setIsSimulating(false);
+          return;
+        }
+
+        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
+          const finding = event.output.investigator_findings?.[0];
+          if (!finding) return;
+          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
+          const roleClean = stripEmojis(finding.title || '');
+
+          setMessages(prev => [...prev, {
+            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
+            sender: 'assistant',
+            timestamp: timeNow(),
+            isSpawningAnimation: true,
+            spawningProgress: {
+              stage: 2,
+              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
+              agentName: agentLabel,
+              agentRole: roleClean,
+              cluster: finding.incident_id,
+              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
+            },
+          }]);
+        } else if (event.node === 'correlation') {
+          const groups = event.output.correlation?.linked_groups || [];
+          if (groups.length > 0) {
+            setMessages(prev => [...prev, {
+              id: `corr-${Date.now()}`,
+              sender: 'assistant',
+              timestamp: timeNow(),
+              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
+            }]);
+          }
+        }
+      },
+      (err) => {
+        if (!isSubscribed) return;
+        console.error('SSE Stream error:', err);
+        setMessages(prev => [...prev, {
+          id: `stream-err-${Date.now()}`,
+          sender: 'assistant',
+          timestamp: timeNow(),
+          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
+        }]);
+        setIsSimulating(false);
+      }
+    );
+
+    return () => {
+      isSubscribed = false;
+      cleanup();
+      setIsSimulating(false);
+    };
+  }, [selectedCluster?.cluster_id]);
+
   /**
    * Runs a manual investigation query (e.g. from user text input or quick scenario trigger buttons).
    */
@@ -221,7 +339,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsSimulating(true);
 
     const clusterLabel = clusterId || 'every active cluster';
-    const userMsgText = customQuery || `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
+    const userMsgText = customQuery || `Run Agentic AI investigation for ${clusterLabel}`;
     
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -234,7 +352,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterLabel}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterLabel}** to the investigator agent assigned by its problem type.`
     };
 
     setMessages(prev => {
@@ -278,7 +396,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `docket-${Date.now()}-${i}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
+                text: '`Investigation complete:`',
                 docket: sanitizeDocket(docket),
               }]);
             });
@@ -291,9 +409,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const finding = event.output.investigator_findings?.[0];
           if (!finding) return;
           const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const rootCauseClean = stripEmojis(finding.root_cause || '');
           const roleClean = stripEmojis(finding.title || '');
-          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
 
           setMessages(prev => [...prev, {
             id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
@@ -306,13 +422,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               agentName: agentLabel,
               agentRole: roleClean,
               cluster: finding.incident_id,
-              tokensUsed: 100,
-              maxTokens: 100,
-              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
-              logs: [
-                `Root cause: ${rootCauseClean}`,
-                ...evidenceClean,
-              ],
+              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
             },
           }]);
         } else if (event.node === 'correlation') {
@@ -402,15 +512,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             agentName: 'Agent 1: Lane & Actuator Investigator',
             agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
             cluster: 'Cluster A (Revision 2)',
-            tokensUsed: 1620,
-            maxTokens: 2000,
-            activeTool: 'mcp-terminal-telemetry::get_alternate_bypass_routing(from=Lane-07, via=Lane-06)',
-            logs: [
-              `Discarded original constraint path: "${rejectedAction}"`,
-              'Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
-              'Automated hydraulic back-pressure cycle simulated: 3x pulses @ 290 bar',
-              'Secondary resolution docket generated with zero human crew dependency'
-            ]
+            toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
           }
         };
         setMessages(prev => [...prev, replanSpawnMsg]);
@@ -462,25 +564,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     e.preventDefault();
     if (!inputValue.trim() || isSimulatingRef.current) return;
 
-    const lower = inputValue.toLowerCase();
     const currentText = inputValue;
     setInputValue('');
 
-    // Simple keyword heuristic to a real cluster_id — not real NLU intent
-    // parsing, just enough to route a free-text query somewhere sensible.
-    let clusterId: string | undefined;
-    if (lower.includes('bcss') || lower.includes('charger') || lower.includes('thermal') || lower.includes('cluster b')) {
-      clusterId = 'CLUSTER-B';
-    } else if (lower.includes('sector a') || lower.includes('battery') || lower.includes('soc') || lower.includes('cluster c')) {
-      clusterId = 'CLUSTER-C';
-    } else if (lower.includes('lane 7') || lower.includes('twistlock') || lower.includes('cluster a')) {
-      clusterId = 'CLUSTER-A';
-    } else if (lower.includes('lane 4') || lower.includes('lidar') || lower.includes('cluster d')) {
-      clusterId = 'CLUSTER-D';
-    }
-    // No match -> undefined -> investigate every active cluster.
-
-    triggerAgentSpawningSimulation(currentText, clusterId);
+    // No fixed cluster ids exist any more — Stage 1 now generates a fresh
+    // "INC-YYYY-MMDD-NNNN" id per run from whatever's actually in
+    // raw_alerts (see clustering/filter.py's generate_incident_id()), so a
+    // keyword-to-hardcoded-id guess can never reliably match. Free text
+    // always investigates every incident Stage 1 currently finds.
+    triggerAgentSpawningSimulation(currentText, undefined);
   };
 
   // Handle Authorize Action
@@ -547,10 +639,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setTempInput(prev => ({ ...prev, [actionText]: '' }));
   };
 
-  const toggleLogExpand = (msgId: string) => {
-    setExpandedLogs(prev => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
-
   const handleReset = () => {
     clearAllTimeouts();
     activeStreamCleanupRef.current?.();
@@ -563,7 +651,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        text: '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
@@ -590,10 +678,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm font-bold text-slate-900 tracking-wide font-sans">
-                PSA INCIDENT SHERLOCK
+                PORT INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
-                SPAWNING & HUMAN GOVERNANCE
+                RESPONSIBLE & TRANSPARENT AI
               </span>
             </div>
           </div>
@@ -611,7 +699,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }`}
           >
             <Zap className={`w-3.5 h-3.5 ${isSimulating ? 'animate-spin' : 'animate-pulse'}`} />
-            <span>{isSimulating ? 'Spawning Agents...' : 'Trigger Spawn Demo'}</span>
+            <span>{isSimulating ? 'Spawning Agents...' : 'Re-trigger Agents Demo'}</span>
           </button>
 
           <button
@@ -628,7 +716,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/40">
         {groupMessagesIntoTurns(messages).map((turn) => {
           const isExpanded = !!expandedTrajectories[turn.id];
-          const totalLogs = turn.trajectoryMessages.reduce((sum, m) => sum + (m.spawningProgress?.logs?.length || 0), 0);
           const subAgentCount = turn.trajectoryMessages.filter(m => m.isSpawningAnimation).length;
 
           return (
@@ -677,10 +764,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             </div>
                             <div className="flex items-center space-x-2 truncate">
                               <span className="font-bold text-slate-800">
-                                {isExpanded ? 'Multi-Agent Investigation Trajectory' : 'Investigated across multi-agent runtime'}
+                                View Investigation Steps
                               </span>
                               <span className="text-[11px] text-slate-500 font-sans hidden sm:inline">
-                                ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''}{totalLogs > 0 ? ` · ${totalLogs} diagnostic logs` : ''})
+                                ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''})
                               </span>
                             </div>
                           </div>
@@ -721,43 +808,29 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         </span>
                                       </div>
 
-                                      <div className="flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg">
-                                        <span className="flex items-center gap-1">
-                                          <Lock className="w-3 h-3 text-sky-600" />
-                                          <span>Isolated Tokens:</span>
-                                        </span>
-                                        <span className="font-bold text-sky-700">
-                                          {tMsg.spawningProgress.tokensUsed} / {tMsg.spawningProgress.maxTokens} ({Math.round((tMsg.spawningProgress.tokensUsed / tMsg.spawningProgress.maxTokens) * 100)}%)
-                                        </span>
-                                      </div>
-
-                                      <div className="text-[11px] text-slate-600 flex items-center gap-1.5 px-1 truncate">
-                                        <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
-                                        <span className="text-slate-400">Active Tool:</span>
-                                        <span className="font-bold text-slate-800 truncate">{tMsg.spawningProgress.activeTool}</span>
-                                      </div>
-
-                                      {/* Diagnostic Schema Logs */}
-                                      <div className="pt-0.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleLogExpand(tMsg.id)}
-                                          className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1 cursor-pointer"
-                                        >
-                                          <span>Diagnostic Logs ({tMsg.spawningProgress.logs.length})</span>
-                                          {expandedLogs[tMsg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                        </button>
-
-                                        {expandedLogs[tMsg.id] && (
-                                          <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px]">
-                                            {tMsg.spawningProgress.logs.map((log, i) => (
-                                              <div key={i} className="text-slate-700 py-0.5">
-                                                <MarkdownRenderer content={log} />
-                                              </div>
+                                      <div className="text-[11px] text-slate-600 px-1 space-y-1">
+                                        <div className="flex items-center gap-1.5 text-slate-400">
+                                          <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
+                                          <span>MCP Tools Called ({tMsg.spawningProgress.toolsUsed.length}):</span>
+                                        </div>
+                                        {tMsg.spawningProgress.toolsUsed.length === 0 ? (
+                                          <div className="pl-4 text-slate-400 italic">No tool calls recorded.</div>
+                                        ) : (
+                                          <ul className="pl-4 space-y-0.5">
+                                            {tMsg.spawningProgress.toolsUsed.map((t, i) => (
+                                              <li key={i} className="font-bold text-slate-800 truncate">
+                                                {t.tool}
+                                                {Object.keys(t.args || {}).length > 0 && (
+                                                  <span className="font-normal text-slate-500">
+                                                    ({Object.entries(t.args).map(([k, v]) => `${k}=${v}`).join(', ')})
+                                                  </span>
+                                                )}
+                                              </li>
                                             ))}
-                                          </div>
+                                          </ul>
                                         )}
                                       </div>
+
                                     </div>
                                   )}
                                 </div>
@@ -833,7 +906,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 font-mono">
                                   <span className="flex items-center gap-1.5">
                                     <Wrench className="w-3.5 h-3.5 text-sky-600" />
-                                    <span>HUMAN GOVERNANCE DISPATCH</span>
+                                    <span>SUGGESTED ACTIONS (HUMAN IN THE LOOP)</span>
                                   </span>
                                   <span className="text-[10px] text-slate-400 font-normal">Operator Action Required</span>
                                 </div>
@@ -857,13 +930,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           {/* Action Status Badges or Trigger Buttons */}
                                           {isAccepted && (
                                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
-                                              <Check className="w-3.5 h-3.5" /> Authorized & Dispatched
+                                              <Check className="w-3.5 h-3.5" /> Accepted
                                             </div>
                                           )}
 
                                           {isRejected && (
                                             <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg shrink-0">
-                                              <XCircle className="w-3.5 h-3.5" /> Rejected (Re-planning)
+                                              <XCircle className="w-3.5 h-3.5" /> Rejected
                                             </div>
                                           )}
 
@@ -879,7 +952,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                                 onClick={() => handleAuthorizeAction(action)}
                                                 className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer"
                                               >
-                                                <ArrowRightCircle className="w-3 h-3" /> Authorize
+                                                <ArrowRightCircle className="w-3 h-3" /> Accept
                                               </button>
                                               <button
                                                 onClick={() => {
@@ -1047,7 +1120,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <div className="font-bold flex items-center justify-between flex-wrap gap-2">
                 <span className="flex items-center gap-1.5 text-xs text-sky-950">
                   <Activity className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
-                  <span>Agent Triage in Progress (LangGraph & MCP)</span>
+                  <span>Agentic Workflow In Progress (LangGraph & MCP)</span>
                 </span>
                 <span className="text-[10px] bg-sky-200/80 px-2 py-0.5 rounded text-sky-800 font-bold uppercase tracking-wider">
                   LIVE STREAMING
@@ -1069,59 +1142,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <Sparkles className="w-3 h-3 text-sky-500" />
           <span>SUGGESTED:</span>
         </span>
+        {/*
+          The old per-cluster chips (Lane 7 Jam / BCSS-02 / Sector A) targeted
+          hardcoded CLUSTER-A/B/C ids from the pre-open-clustering demo data.
+          Stage 1 now generates a fresh INC-YYYY-MMDD-NNNN id per run from
+          whatever raw_alerts actually contains, so a hardcoded id can never
+          reliably match a real incident any more — removed rather than kept
+          pointing at ids that no longer exist.
+        */}
         <button
           type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (CLUSTER-A)', 'CLUSTER-A')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-sky-50 hover:text-sky-800 text-slate-600 border border-slate-200 hover:border-sky-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          Lane 7 Jam (CLUSTER-A)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (CLUSTER-B)', 'CLUSTER-B')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-amber-50 hover:text-amber-900 text-slate-600 border border-slate-200 hover:border-amber-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          BCSS-02 Charger Trip (CLUSTER-B)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate Sector A Battery Starvation (CLUSTER-C)', 'CLUSTER-C')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-emerald-50 hover:text-emerald-900 text-slate-600 border border-slate-200 hover:border-emerald-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          Sector A Starvation (CLUSTER-C)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active cluster', undefined)}
+          onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active incident', undefined)}
           disabled={isSimulating}
           className="bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
-          All Clusters Demo
+          Run Investigation (all active incidents)
         </button>
       </div>
 
-      {/* Message Input Box */}
-      <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-white">
-        <div className="flex items-center space-x-2 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-sky-500 focus-within:border-sky-500 shadow-inner">
+      {/* Message Input Box — disabled for this iteration, use the trigger chips above */}
+      <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-slate-50">
+        <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 opacity-60 cursor-not-allowed">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type any message (e.g. 'Investigate Lane 7' or 'Test agent spawning') and press Enter..."
-            className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans"
-            disabled={isSimulating}
+            placeholder="Chat with Sherlock - Coming Soon"
+            className="flex-1 bg-transparent text-xs text-slate-400 placeholder:text-slate-400 focus:outline-none font-sans cursor-not-allowed"
+            disabled
           />
           <button
             type="submit"
-            disabled={!inputValue.trim() || isSimulating}
-            className={`p-2 rounded-lg transition-all ${
-              inputValue.trim() && !isSimulating
-                ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
+            disabled
+            className="p-2 rounded-lg bg-slate-200 text-slate-400 cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
           </button>

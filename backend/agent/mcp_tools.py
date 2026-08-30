@@ -1,8 +1,8 @@
 """
-Connects to the three existing MCP servers in backend/mcp/ over stdio, and
-hands back their tools as LangChain-compatible tool objects.
+Connects to the unified MCP server (backend/mcp/server.py) over stdio, and
+hands back its tools as LangChain-compatible tool objects.
 
-This is the only file that knows the MCP servers' file paths. Everything
+This is the only file that knows the MCP server's file path. Everything
 else in backend/agent/ just asks for tools by name.
 """
 

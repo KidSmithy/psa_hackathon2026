@@ -117,7 +117,7 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-white font-sans">
-              PAGE 1: AGV YARD MAP VISUALIZER & KINEMATICS
+              PAGE 1: REAL-TIME AGV YARD MAP VISUALIZER
             </h2>
             <p className="text-slate-300 text-xs font-mono">
               Live spatial coordinates (850m × 480m), kinematic vectors, and synchronized fleet telemetry
@@ -132,7 +132,7 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
             className="flex items-center space-x-1.5 text-white bg-white/10 hover:bg-white/20 border border-tuas-cyan/40 px-3.5 py-1.5 rounded-xl transition-all shadow-sm active:scale-95 font-bold"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-tuas-teal ${isLoading ? 'animate-spin' : ''}`} />
-            <span>{isLoading ? 'Syncing...' : 'Sync Supabase'}</span>
+            <span>{isLoading ? 'Syncing...' : 'Sync Database'}</span>
           </button>
         </div>
       </div>

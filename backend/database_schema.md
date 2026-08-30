@@ -36,8 +36,14 @@ Stores real-time alerts emitted by terminal IoT sensors, AGVs, charging stations
 
 ---
 
-### 2.2 `incident_clusters`
+### 2.2 `incident_clusters`  *(v1 — hand-seeded, still live)*
 Aggregates correlated raw alerts into identified operational incidents assigned to specific agent workflows.
+
+> This table holds the original four hand-labelled scenarios (`CLUSTER-A`..`CLUSTER-D`).
+> It is **read-only from the backend's point of view** and is never written to by the
+> clustering algorithm. The algorithm writes to `incident_clusters_v2` instead — see
+> §2.9 and `backend/OPEN_CLUSTERING.md`. Set `STAGE1_SOURCE=table` in `backend/.env`
+> to run the agent pipeline against this table again.
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
@@ -46,6 +52,30 @@ Aggregates correlated raw alerts into identified operational incidents assigned 
 | `primary_location` | `TEXT` | `NOT NULL` | Center/focus area of incident (e.g., `Lane_7`, `Sector_A`) |
 | `assigned_agent` | `TEXT` | `NOT NULL` | Assigned investigator agent (e.g., `Agent_1_LaneInvestigator`) |
 | `raw_alert_ids` | `JSONB` | `NOT NULL` | Array of alert IDs belonging to cluster (e.g., `["ALT-001", "ALT-002", ...]`) |
+
+---
+
+### 2.9 `incident_clusters_v2`, `safety_escalations`, `stage1_runs`  *(v2 — generated)*
+
+Created by `backend/sql/002_open_clustering.sql`. These hold what the open
+clustering algorithm produces from `raw_alerts`: an open number of incidents
+grouped by problem type, singletons included.
+
+`incident_clusters_v2` repeats the five v1 columns verbatim (`cluster_id`,
+`name`, `primary_location`, `assigned_agent`, `raw_alert_ids`) so any query or UI
+written against v1 works against v2 by changing only the table name. On top of
+those it carries `problem_type`, `problem_type_label`, `is_singleton`,
+`assigned_domain`, `suggested_priority`, `clustering_metadata`,
+`participating_vehicles`, `evidence_refs`, `coordinates`, and the `run_id` of the
+Stage 1 execution that produced the row.
+
+`safety_escalations` holds safety-channel alerts, which bypass priority scoring
+and route straight to an immediate escalation — they are not incidents, so they
+do not belong in the clusters table. `stage1_runs` records one row per algorithm
+run with its config and stats.
+
+See the SQL file for full column definitions, and `backend/OPEN_CLUSTERING.md`
+for how to populate them.
 
 ---
 
@@ -134,6 +164,12 @@ Historical log of inspections, repairs, calibrations, and component replacements
 ---
 
 ## 3. Seeded Test Scenarios
+
+> These five scenarios describe how the **v1** `incident_clusters` rows were hand-labelled.
+> The open clustering algorithm re-derives incidents from `raw_alerts` and does not
+> reproduce these groupings one-for-one — it splits Scenario 1 into a traffic-flow
+> incident, an actuator incident and a crane-handoff singleton, for instance, because
+> those are three different problems. See `backend/OPEN_CLUSTERING.md` for the mapping.
 
 1. **Scenario 1 - Twistlock Actuator Timeout (`CLUSTER-A` in `Lane_7`)**:
    - `AGV-104` has hydraulic overload (275 bar) preventing twistlock release.

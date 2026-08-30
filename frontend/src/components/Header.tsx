@@ -1,34 +1,28 @@
 import React from 'react';
-import { 
-  Anchor, 
-  Database, 
-  Zap, 
+import {
+  Zap,
   ShieldAlert,
-  ArrowLeft,
   Activity,
   Compass,
   Clock,
   Layers
 } from 'lucide-react';
+import psaLogoMark from '../assets/psa-logo-mark.png';
 
 export type MainViewType = 'yardMap' | 'timeRibbon' | 'alerts' | 'spawning';
 
 interface HeaderProps {
   currentView: MainViewType;
   onChangeView: (view: MainViewType) => void;
-  onBackToAlerts?: () => void;
   totalAlertsCount: number;
   totalClustersCount: number;
-  isSupabaseLive: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   onChangeView,
-  onBackToAlerts,
   totalAlertsCount,
   totalClustersCount,
-  isSupabaseLive,
 }) => {
   return (
     <header className="bg-psa-navy text-white border-b border-tuas-cyan/30 px-4 md:px-6 py-3 sticky top-0 z-50 shadow-lg shadow-psa-navy/20">
@@ -37,23 +31,22 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand Identity & Header Left */}
         <div className="flex items-center space-x-3">
           <div className="bg-white/10 border border-tuas-cyan/40 p-2 rounded-xl flex items-center justify-center shadow-inner shrink-0">
-            <Anchor className="w-6 h-6 text-tuas-teal animate-pulse" />
+            <img src={psaLogoMark} alt="PSA" className="w-6 h-6 object-contain" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center flex-wrap sm:flex-nowrap gap-2">
-              <span className="font-mono font-black text-xs px-2 py-0.5 rounded bg-tuas-teal text-psa-navy tracking-wider shrink-0">
-                PSA
-              </span>
               <h1 className="font-black text-base md:text-lg text-white tracking-wide font-sans whitespace-nowrap">
                 TUAS SMART PORT OPERATIONS
               </h1>
-              <span className="bg-tuas-cyan/20 text-tuas-cyan border border-tuas-cyan/40 text-[10px] px-2.5 py-0.5 rounded font-mono font-bold tracking-wider hidden sm:inline-block whitespace-nowrap shrink-0">
-                {currentView === 'spawning' ? 'AGENT TRIAGE RUNTIME' : 'MULTI-VIEW DISPATCH PORTAL'}
-              </span>
+              {currentView === 'spawning' && (
+                <span className="bg-tuas-cyan/20 text-tuas-cyan border border-tuas-cyan/40 text-[10px] px-2.5 py-0.5 rounded font-mono font-bold tracking-wider hidden sm:inline-block whitespace-nowrap shrink-0">
+                  PORT INCIDENT SHERLOCK
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-tuas-teal animate-ping shrink-0"></span>
-              <span>SG::TUAS_PORT • SECTOR_A / BERTH_2 • LIVE SUPABASE TELEMETRY</span>
+              <span>SECTOR_A / BERTH_2 • LIVE TELEMETRY</span>
             </p>
           </div>
         </div>
@@ -97,29 +90,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span>3. Incident Queue</span>
             </button>
           </nav>
-        ) : (
-          onBackToAlerts && (
-            <button
-              onClick={onBackToAlerts}
-              className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs px-4 py-2 rounded-xl font-mono font-bold transition-all shadow-sm active:scale-95"
-            >
-              <ArrowLeft className="w-4 h-4 text-tuas-teal" />
-              <span>Back to Incident Queue</span>
-            </button>
-          )
-        )}
+        ) : null}
 
         {/* Status Indicators */}
         <div className="flex items-center space-x-2.5">
-          {/* Supabase Status */}
-          <div className="flex items-center space-x-1.5 bg-black/30 border border-white/10 px-3 py-1.5 rounded-xl text-xs font-mono">
-            <Database className="w-3.5 h-3.5 text-tuas-cyan" />
-            <span className="text-slate-300 text-[11px]">DB:</span>
-            <span className={isSupabaseLive ? 'text-tuas-teal font-bold' : 'text-amber-400 font-bold'}>
-              {isSupabaseLive ? 'Supabase Live' : 'Fallback'}
-            </span>
-          </div>
-
           {/* Active Clusters Pill */}
           <div className="flex items-center space-x-1.5 bg-psa-flame/20 border border-psa-flame/40 px-3 py-1.5 rounded-xl text-xs font-mono text-red-200 font-bold shadow-sm">
             <span className="relative flex h-2 w-2">

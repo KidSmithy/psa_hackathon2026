@@ -10,3 +10,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+/**
+ * Which incident table the UI reads.
+ *
+ * `incident_clusters` is the original hand-seeded CLUSTER-A..D snapshot and
+ * stays untouched, so the previous working demo is always one env var away.
+ * `incident_clusters_v2` is what the open clustering algorithm writes (see
+ * backend/sql/002_open_clustering.sql) — same five core columns, plus problem
+ * type, priority score and clustering metadata.
+ */
+export const CLUSTERS_TABLE =
+  import.meta.env.VITE_CLUSTERS_TABLE || 'incident_clusters';

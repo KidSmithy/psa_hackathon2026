@@ -62,6 +62,20 @@ export interface IncidentClusterRow {
   primary_location: string;
   assigned_agent: string;
   raw_alert_ids: string[];
+
+  // Present only on rows from incident_clusters_v2 (open clustering). The v1
+  // incident_clusters table has the five columns above and nothing else, so
+  // every field below is optional and the UI must tolerate its absence.
+  run_id?: string;
+  problem_type?: string;
+  problem_type_label?: string;
+  is_singleton?: boolean;
+  assigned_domain?: string;
+  created_at?: string;
+  nearest_named_feature?: string;
+  coordinates?: { x: number; y: number } | null;
+  evidence_refs?: Record<string, any>[] | null;
+  incident_metadata?: Record<string, any> | null;
   schema_version?: string;
   suggested_priority?: {
     score: number;
@@ -128,12 +142,6 @@ export interface TimeBracket {
   alertIds: string[];
   alerts: RawAlert[];
   severity: SeverityLevel;
-}
-
-export interface IncidentLaneData {
-  incident: ClusterWithAlerts;
-  brackets: TimeBracket[];
-  allAlertsSorted: RawAlert[];
 }
 
 export interface InterpolatedAGVState {

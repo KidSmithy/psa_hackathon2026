@@ -11,9 +11,11 @@ import operator
 
 
 class OverallState(TypedDict):
-    # Stage 1 output — one entry per incident cluster, keyed by cluster_id
-    # (e.g. "CLUSTER-A"). Shape matches stage1_bridge.get_incident_clusters(),
-    # which reads the real Supabase incident_clusters table.
+    # Stage 1 output — one entry per incident, keyed by incident id
+    # (e.g. "INC-2026-0823-0001"). Shape matches stage1_bridge.get_clusters(),
+    # which either runs the live clustering algorithm over raw_alerts or reads
+    # the legacy pre-labelled incident_clusters table. The set is open: its
+    # size is whatever the alert stream produced, not a fixed four.
     clusters: dict[str, dict[str, Any]]
 
     # Every investigator worker appends one finding here. operator.add lets
@@ -34,4 +36,17 @@ class WorkerState(TypedDict):
     cluster_name: str
     target_entity: str
     matched_alerts: list[str]
+
+    # Which investigator node owns this incident, derived from problem_type.
+    domain: str
+
+    # Open-clustering context. An investigator can no longer assume it is
+    # looking at one of four known scenarios, so it is told what kind of
+    # problem this is and which concrete assets are involved.
+    problem_type: str
+    problem_type_label: str
+    target_assets: list[str]
+    is_singleton: bool
+    priority_score: float
+
     investigator_findings: Annotated[list[dict[str, Any]], operator.add]

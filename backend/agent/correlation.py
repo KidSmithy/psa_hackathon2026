@@ -7,10 +7,9 @@ in Cluster B feeding a fleet SoC starvation in Cluster C), rather than
 independent incidents. This is an LLM step, not a plain merge — spotting a
 shared cause across findings needs reasoning a deterministic join can't do.
 
-NOTE: submit_incident_docket (backend/mcp/docket_server.py) only accepts a
-flat list of independent incidents today. This node's `correlation` output
-is not yet threaded into the docket payload in docket.py — that needs a
-schema change on the docket service first (e.g. a `linked_to` field).
+This node's output is consumed by docket.py's attach_linked_to(), which
+merges each group into a `linked_to` field on the relevant findings before
+submit_incident_docket is called.
 """
 
 import os

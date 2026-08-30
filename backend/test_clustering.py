@@ -38,10 +38,12 @@ if sys.stdout.encoding != "utf-8":
         pass
 
 from clustering import (
-    CLUSTERING_METHOD,
+    CLUSTERING_METHOD_OPEN,
+    CLUSTERING_METHOD_SPATIOTEMPORAL,
     SCHEMA_VERSION,
     is_noise_alert,
     normalize_alert_batch,
+    resolve_config,
     run_clustering,
     yard,
 )
@@ -54,7 +56,14 @@ def load_from_supabase() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Li
     """
     print("\n[DB] Connecting to Supabase (READ-ONLY)...")
     try:
-        from mcp.supabase_client import get_supabase_client
+        # backend/mcp goes on sys.path and the module is imported directly:
+        # `import mcp.supabase_client` resolves to the *installed* `mcp`
+        # package (a fastmcp dependency), not this project's folder of the
+        # same name, so the qualified import can never succeed.
+        mcp_dir = BACKEND_DIR / "mcp"
+        if str(mcp_dir) not in sys.path:
+            sys.path.insert(0, str(mcp_dir))
+        from supabase_client import get_supabase_client
         client = get_supabase_client()
     except Exception as e:
         print(f"[WARN] Supabase client initialization failed: {e}")
@@ -129,12 +138,41 @@ def get_fallback_supabase_mock_data() -> Tuple[List[Dict[str, Any]], List[Dict[s
     return raw_alerts, telemetry, existing
 
 
+# PSA-Sprint may sit beside the repo (../../PSA-Sprint, the usual checkout) or
+# inside it (../PSA-Sprint). Both are searched rather than assuming one.
+SPRINT_ROOTS = [
+    BACKEND_DIR.parent.parent / "PSA-Sprint",
+    BACKEND_DIR.parent / "PSA-Sprint",
+]
+
+
+def sprint_paths(*parts: str) -> List[Path]:
+    """Every plausible location of a PSA-Sprint file, in preference order."""
+    out: List[Path] = []
+    for root in SPRINT_ROOTS:
+        out.append(root.joinpath(*parts))
+        out.append(root.joinpath("stage1_agv", "stage1", *parts))
+    return out
+
+
+def import_generate_alerts():
+    """Imports PSA-Sprint's generate_alerts from whichever root actually has it."""
+    for root in SPRINT_ROOTS:
+        for candidate in (root, root / "stage1_agv" / "stage1"):
+            if (candidate / "generate_alerts.py").exists():
+                if str(candidate) not in sys.path:
+                    sys.path.insert(0, str(candidate))
+                import generate_alerts
+                return generate_alerts
+    raise RuntimeError(
+        "PSA-Sprint's generate_alerts.py not found. Looked in: "
+        + ", ".join(str(r) for r in SPRINT_ROOTS)
+    )
+
+
 def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
     """Loads curated scenarios from PSA-Sprint."""
-    candidates = [
-        BACKEND_DIR.parent / "PSA-Sprint" / "out" / "raw_alerts.json",
-        BACKEND_DIR.parent / "PSA-Sprint" / "stage1_agv" / "stage1" / "out" / "raw_alerts.json",
-    ]
+    candidates = sprint_paths("out", "raw_alerts.json")
     for path in candidates:
         if path.exists():
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -142,8 +180,7 @@ def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
             return alerts, str(path)
     # Generate on the fly if files not found
     try:
-        sys.path.insert(0, str(BACKEND_DIR.parent / "PSA-Sprint"))
-        import generate_alerts
+        generate_alerts = import_generate_alerts()
         scenarios = generate_alerts.curated()
         alerts = []
         for _, _, grp in scenarios:
@@ -155,10 +192,7 @@ def load_from_curated_file() -> Tuple[List[Dict[str, Any]], str]:
 
 def load_from_bulk_file() -> Tuple[List[Dict[str, Any]], str]:
     """Loads bulk 200 alert dataset from PSA-Sprint."""
-    candidates = [
-        BACKEND_DIR.parent / "PSA-Sprint" / "out" / "raw_alerts_bulk.json",
-        BACKEND_DIR.parent / "PSA-Sprint" / "stage1_agv" / "stage1" / "out" / "raw_alerts_bulk.json",
-    ]
+    candidates = sprint_paths("out", "raw_alerts_bulk.json")
     for path in candidates:
         if path.exists():
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -166,8 +200,7 @@ def load_from_bulk_file() -> Tuple[List[Dict[str, Any]], str]:
             return alerts, str(path)
     # Generate bulk on the fly
     try:
-        sys.path.insert(0, str(BACKEND_DIR.parent / "PSA-Sprint"))
-        import generate_alerts
+        generate_alerts = import_generate_alerts()
         alerts = generate_alerts.bulk(200, seed=7)
         return alerts, "PSA-Sprint::generate_alerts.bulk(200)"
     except Exception as e:
@@ -191,9 +224,12 @@ def format_cluster_row(idx: int, c: Dict[str, Any]) -> str:
     num_v = len(vehicles)
     refs_count = len(c.get("evidenceRefs", []))
     
+    singleton = " [SINGLETON]" if c.get("isSingleton") else ""
     return (
         f"[{idx:02d}] {inc_id} | Score: {score:.2f} | Lead: {lead:<7} | "
         f"{num_v} Vehicle(s) | {num_alerts:02d} Alerts | {refs_count} Evidence Refs\n"
+        f"     Name: {c.get('name', 'n/a')}\n"
+        f"     Problem Type: {c.get('problemType', 'n/a')}{singleton} -> {c.get('assignedAgent', 'n/a')}\n"
         f"     Feature: {feature}\n"
         f"     Top Factors: {reasons}\n"
         f"     Alert IDs: {', '.join(c['clustering']['memberAlertIds'])}"
@@ -207,12 +243,15 @@ def test_clustering_workflow(
     custom_file: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
 ):
-    cfg = config or {}
-    tw = cfg.get("temporal_window_s", 20.0)
-    sw = cfg.get("spatial_window_m", 40.0)
+    cfg = resolve_config(config)
+    method = CLUSTERING_METHOD_OPEN if cfg["group_by_problem_type"] else CLUSTERING_METHOD_SPATIOTEMPORAL
     print_banner(f"Stage 1 Deterministic Clustering Test Runner (Source: {source})")
-    print(f"Schema Contract: {SCHEMA_VERSION} | Clustering Method: {CLUSTERING_METHOD}")
-    print(f"Spatial Window: {sw}m | Temporal Window: {tw}s | Topology Max Hops: 1")
+    print(f"Schema Contract: {SCHEMA_VERSION} | Clustering Method: {method}")
+    print(
+        f"Spatial Window: {cfg['spatial_window_m']}m | Temporal Window: {cfg['temporal_window_s']}s | "
+        f"Topology Max Hops: {cfg['topology_max_hops']} | Problem-Type Gate: "
+        f"{'ON' if cfg['group_by_problem_type'] else 'OFF'}"
+    )
 
     # 1. Load alerts
     telemetry_records: List[Dict[str, Any]] = []
@@ -255,7 +294,7 @@ def test_clustering_workflow(
         print("\n[Noise Filtering] Noise filter disabled or 0 noise alerts in stream.")
 
     # 3. Execute Stage 1 Clustering
-    print(f"\n[Clustering] Executing ST-DBSCAN + Topology clustering on {len(normalized_alerts)} alerts...")
+    print(f"\n[Clustering] Executing {method} clustering on {len(normalized_alerts)} alerts...")
     clusters, safety_escalations = run_clustering(normalized_alerts, config=cfg)
 
     # 4. Display Results
@@ -313,7 +352,8 @@ def test_clustering_workflow(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         bundle = {
             "schemaVersion": SCHEMA_VERSION,
-            "clusteringMethod": CLUSTERING_METHOD,
+            "clusteringMethod": method,
+            "clusteringConfig": cfg,
             "source": src_label,
             "totalIngestedAlerts": total_ingested,
             "noiseAlertsFiltered": len(noise_alerts),
@@ -341,8 +381,8 @@ def main():
     parser.add_argument(
         "--temporal-window",
         type=float,
-        default=20.0,
-        help="Temporal window threshold in seconds (default: 20.0)",
+        default=None,
+        help="Temporal window threshold in seconds (default: 180 in open mode, 20 in legacy mode)",
     )
     parser.add_argument(
         "--spatial-window",
@@ -354,6 +394,11 @@ def main():
         "--no-filter-noise",
         action="store_true",
         help="Disable Stage 1 deterministic noise filtering",
+    )
+    parser.add_argument(
+        "--legacy-mode",
+        action="store_true",
+        help="Disable the problem-type gate and cluster purely on space+time (pre-open-clustering behaviour)",
     )
     parser.add_argument(
         "--out",
@@ -369,10 +414,15 @@ def main():
     )
 
     args = parser.parse_args()
-    config = {
-        "temporal_window_s": args.temporal_window,
-        "spatial_window_m": args.spatial_window,
-    }
+    config = {"spatial_window_m": args.spatial_window}
+    if args.legacy_mode:
+        config["group_by_problem_type"] = False
+    # Only pin the temporal window when the caller actually asked for one —
+    # otherwise let resolve_config pick the right default for the mode (open
+    # clustering uses a much wider window because the type gate does the
+    # separating).
+    if args.temporal_window is not None:
+        config["temporal_window_s"] = args.temporal_window
     test_clustering_workflow(
         source=args.source,
         filter_noise=not args.no_filter_noise,
