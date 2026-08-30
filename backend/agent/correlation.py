@@ -33,7 +33,22 @@ unrelated incidents that merely happened around the same time.
 Only group findings together if there is a concrete shared entity or stated causal link in
 the evidence (a shared asset id, a shared location, or one finding's evidence explaining
 the other's trigger). When in doubt, leave findings standalone — a false merge is worse
-than missing one."""
+than missing one.
+
+You are comparing findings ACROSS different incidents. Findings from several specialists on
+the SAME incident have already been reconciled by the aggregator, so every entry you see is
+one incident.
+
+Respond with JSON in exactly this shape, and nothing else:
+
+{
+  "linked_groups": [
+    {
+      "incident_ids": ["two or more incident ids that share an underlying cause"],
+      "reason": "the concrete shared cause or entity linking them"
+    }
+  ]
+}"""
 
 
 class CorrelatedGroup(BaseModel):
@@ -48,7 +63,10 @@ class CorrelationResult(BaseModel):
 
 
 async def correlation_node(state: OverallState) -> dict[str, Any]:
-    findings = state["investigator_findings"]
+    # Aggregated, not raw: one entry per incident, after multi-agent findings
+    # have been reconciled. Falls back to raw findings if the aggregator
+    # produced nothing, so the node still works if it is ever skipped.
+    findings = state.get("aggregated_findings") or state.get("investigator_findings") or []
 
     if len(findings) < 2:
         return {"correlation": CorrelationResult(linked_groups=[]).model_dump()}

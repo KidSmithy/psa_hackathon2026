@@ -128,12 +128,21 @@ def _select_clusters(cluster_id: Optional[str], source: Optional[str] = None) ->
 def _finalize(result: dict[str, Any]) -> dict[str, Any]:
     """Shared by both endpoints: attaches linked_to and builds DocketItems."""
     run_timestamp = datetime.now(timezone.utc).isoformat()
-    findings = attach_linked_to(result.get("investigator_findings", []), result.get("correlation"))
+    # Aggregated findings are one-per-incident; the raw list can hold several
+    # per incident when the orchestrator assigned multiple specialists.
+    findings = attach_linked_to(
+        result.get("aggregated_findings") or result.get("investigator_findings", []),
+        result.get("correlation"),
+    )
     dockets = [to_docket_item(f, run_timestamp) for f in findings]
     return {
         "dockets": dockets,
         "correlation": result.get("correlation"),
         "docketResult": result.get("docket_result"),
+        # Why each incident was routed where it was, and what the camera saw —
+        # the UI needs these to show the orchestrator's reasoning.
+        "orchestration": result.get("orchestration", {}),
+        "videoFindings": result.get("video_findings", {}),
     }
 
 
@@ -228,6 +237,9 @@ async def investigate_stream(
                     logger.info("node finished: %s -> keys=%s", node_name, list(node_output.keys()))
                     for key, value in node_output.items():
                         if key == "investigator_findings":
+                            # Appended, not replaced: parallel investigators each
+                            # emit their own list and the stream sees them one at
+                            # a time.
                             final_state["investigator_findings"] = final_state.get(
                                 "investigator_findings", []
                             ) + value

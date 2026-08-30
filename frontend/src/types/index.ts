@@ -7,9 +7,17 @@ export interface RawAlert {
   type: string;
   location?: string;
   severity: SeverityLevel;
-  message: string;
+  // Optional because backend/sql/006 drops this column: the seeded messages
+  // state the diagnosis outright, so they are withheld from every agent (see
+  // backend/agent/facts.py). Read it through alertText() so the UI degrades to
+  // the alert type instead of rendering "undefined".
+  message?: string;
   isFilteredNoise?: boolean;
 }
+
+/** Display text for an alert, whether or not `message` still exists. */
+export const alertText = (alert: Pick<RawAlert, 'message' | 'type'>): string =>
+  alert.message ?? alert.type.replace(/_/g, ' ').toLowerCase();
 
 export interface AGVTelemetryRow {
   vehicle_id: string;

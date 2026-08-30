@@ -238,12 +238,104 @@ rows unchanged.
 
 ---
 
+## The AI orchestrator pipeline
+
+Routing is no longer a lookup. The graph now runs:
+
+```
+START -> video_analysis -> orchestrator -> (fan out by domain)
+                                             |
+    [lane | power | fleet_power | general]_investigator
+                                             |
+                          aggregator -> correlation -> submit_docket -> END
+```
+
+| Stage | File | What it does |
+|---|---|---|
+| `video_analysis` | `agent/video_analyst.py` | Gemini 3.7 Flash reads the CCTV clip attached to an incident. Runs **first**, so what the camera saw is an input to routing rather than something discovered afterwards. |
+| `orchestrator` | `agent/orchestrator.py` | LLM. Decides which specialist(s) each incident needs — **one, two or three** — weighing the video finding against the telemetry. |
+| investigators | `agent/investigators/*.py` | Unchanged in kind, but each now receives a `focus`: the specific question the orchestrator wants it to answer. Two agents on one incident differ by `focus`, which is the whole reason for assigning both. |
+| `aggregator` | `agent/aggregator.py` | Fans N findings per incident back in to exactly one, surfacing disagreements rather than silently picking a winner. |
+
+Every layer states its JSON contract in its own system prompt (`FINDING_CONTRACT`,
+`ASSIGNMENT_CONTRACT`, `MERGED_CONTRACT`, `VIDEO_FINDING_CONTRACT`) and enforces
+it with structured output, so the prompt is readable documentation and a chatty
+model still parses.
+
+**Multi-agent assignment** was the reason the aggregator had to exist:
+`DOCKET-{incident_id}` collides the moment one incident produces two findings.
+Correlation, the docket and the API now all read `aggregated_findings`, which is
+one entry per incident, and fall back to the raw list if the aggregator is ever
+skipped.
+
+**Everything fails soft.** No `GEMINI_API_KEY`, no CCTV rules, no matching clip,
+or a failed upload → no video finding, and the orchestrator decides on telemetry
+alone. An orchestrator error or an unknown domain in its response → deterministic
+fallback routing, because a dropped incident is worse than a generically-routed
+one.
+
+---
+
+## Why the agents never see `raw_alerts.message`
+
+The seeded messages state the diagnosis outright — *"Twistlock release actuator
+timed out"*, *"Pressure reached 275 bar limit"*, *"Busbar temperature exceeded
+80.0C threshold"*. An agent handed those is paraphrasing an answer, not deriving
+one, and the pipeline would look far more capable than it is.
+
+`agent/facts.py` is the single projection from an incident to what a model may
+see. It is a **whitelist** (`id`, `timestamp`, `source`, `type`, `location`,
+`severity`), so a column added to `raw_alerts` later is excluded by default
+rather than included by accident. `assert_no_leaked_message()` is the assertion
+to use in tests.
+
+The clustering side no longer reads the column either: `adapter.py` derives
+vehicle, crane and safety-channel from `source`/`type`/`location`, and
+`problem_types.py` classifies from fault codes and `source`. **Verified: the
+clustering output is byte-identical with and without the column** — same 7
+incidents, same groupings, same routing.
+
+To actually drop it, run `sql/006_drop_raw_alert_message.sql`. It archives the
+text to `raw_alerts_message_archive` first and includes the restore statement.
+The frontend was made to tolerate its absence: `message` is optional on
+`RawAlert` and every read goes through `alertText()`, which falls back to a
+humanised alert type. Those pages will look emptier, not broken.
+
+---
+
+## Video analysis
+
+`sql/005_cctv_videos.sql` creates the `cctv_videos` lookup — one row per clip,
+matched to an incident by `location` plus optional `problem_types`. Rules naming
+a problem type beat catch-all rules for the same location. You can equally
+hardcode clips in `FOOTAGE_RULES` in `agent/cctv.py` without a database.
+
+Setup:
+
+```env
+GEMINI_API_KEY=...            # backend/.env; without it the stage is skipped
+GEMINI_MODEL=gemini-3.7-flash # default
+CCTV_ROOT=<dir>               # default backend/video/, where relative uris resolve
+```
+
+`pip install -r requirements.txt` again — `google-genai` was added.
+
+One deliberate choice: the video analyst is told the **location and nothing
+else**. Not the fault type, not the alert types, not even the clip's own
+`description`. A model told "this is a twistlock failure" will report a twistlock
+failure whether or not one is visible; the value of this stage is an independent
+observation the orchestrator can weigh *against* the telemetry. It is also told
+to answer `UNUSABLE_FOOTAGE` rather than invent an event, and investigators are
+told to treat its output as an observation to corroborate, not as fact.
+
+---
+
 ## Where the triage agent plugs in
 
-Routing today is a deterministic `problem_type -> investigator` map. When you
-add an agent that picks the investigator from the most likely cause, it does not
-need a schema change or a coordinator rewrite — the decision is already data on
-the incident:
+*(Historical — this is now implemented; see "The AI orchestrator pipeline"
+above. Kept because the seam it describes is still how routing is overridden.)*
+
+The decision is data on the incident, not code:
 
 - `agent/coordinator.py`'s `resolve_domain()` prefers `cluster["domain"]` and
   only falls back to the map when it is missing. An agent that sets `domain`

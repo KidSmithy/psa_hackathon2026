@@ -123,7 +123,7 @@ TYPE_TO_FAMILY: Dict[str, str] = {
     "CYCLE_COMPLETE": ENVIRONMENT,
 }
 
-# Fallback keyword rules, applied to the alert type and message only when no
+# Fallback keyword rules, applied to the alert type and emitting source when no
 # exact code matched. Ordered — first hit wins.
 KEYWORD_RULES: List[tuple] = [
     (("twistlock", "spreader", "hydraulic", "actuator"), MECHANICAL_ACTUATOR),
@@ -160,8 +160,16 @@ def _candidate_codes(alert: Dict[str, Any]) -> List[str]:
 
 
 def _search_text(alert: Dict[str, Any]) -> str:
+    """
+    Text the keyword rules run over: fault codes and the emitting source only.
+
+    `message` is excluded deliberately. It is a human-written summary that names
+    the fault outright, so classifying from it would mean the taxonomy works on
+    the seeded demo rows and collapses on any real stream where the wording
+    differs. Codes and source names are machine-emitted and stable.
+    """
     raw = alert.get("_originalRaw") or {}
-    parts = _candidate_codes(alert) + [str(raw.get("message") or ""), str(alert.get("message") or "")]
+    parts = _candidate_codes(alert) + [str(raw.get("source") or "")]
     return " ".join(parts).lower()
 
 

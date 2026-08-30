@@ -39,6 +39,8 @@ if str(MCP_DIR) not in sys.path:
 from clustering import normalize_alert_batch, run_clustering  # noqa: E402
 from supabase_client import get_supabase_client  # noqa: E402
 
+from agent.facts import alert_facts_batch  # noqa: E402
+
 logger = logging.getLogger("psa_agent.stage1")
 
 # Table the algorithm's own output is written to. The original, hand-seeded
@@ -202,8 +204,46 @@ def to_graph_clusters(
             "priority_score": cluster["suggestedPriority"]["score"],
             "priority_reasons": cluster["suggestedPriority"]["reasonCodes"],
             "nearest_named_feature": cluster["location"]["nearestNamedFeature"],
+            # Machine-emitted alert signal for the orchestrator to reason over.
+            # Routed through alert_facts_batch so raw_alerts.message cannot
+            # reach a prompt even if a caller passes full rows.
+            **_alert_signal(cluster, raw_by_id),
         }
     return out
+
+
+def _alert_signal(cluster: dict[str, Any], raw_by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Alert types, severity mix and time bounds — no human-written summaries."""
+    members = _member_raw_rows(cluster, raw_by_id)
+    rows = alert_facts_batch(members)
+    if not rows:
+        return {}
+    times = sorted(str(r["timestamp"]) for r in rows if r.get("timestamp"))
+    return {
+        "alert_types": sorted({str(r["type"]) for r in rows if r.get("type")}),
+        "alert_sources": sorted({str(r["source"]) for r in rows if r.get("source")}),
+        "severity_mix": dict(Counter(str(r["severity"]) for r in rows if r.get("severity"))),
+        "first_alert_at": times[0] if times else None,
+        "last_alert_at": times[-1] if times else None,
+        "video_links": _video_links(members),
+    }
+
+
+def _video_links(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """
+    {video_id: [alert_id, ...]} for the member alerts that carry one.
+
+    The CCTV link lives on raw_alerts.video_id -> videos.id, which is
+    alert-level: an incident whose alerts reference two cameras gets both, and
+    each clip knows which alerts pointed at it. Taken straight from the raw
+    rows rather than re-queried, since Stage 1 already has them.
+    """
+    links: dict[str, list[str]] = {}
+    for row in rows:
+        video_id = row.get("video_id")
+        if video_id:
+            links.setdefault(str(video_id), []).append(str(row.get("id")))
+    return links
 
 
 def get_live_clusters(config: Optional[dict[str, Any]] = None) -> dict[str, dict[str, Any]]:

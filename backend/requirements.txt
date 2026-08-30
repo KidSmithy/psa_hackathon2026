@@ -9,3 +9,4 @@ langchain-mcp-adapters
 langfuse
 fastapi
 uvicorn
+google-genai

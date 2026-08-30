@@ -71,8 +71,10 @@ def normalize_db_alert(
     telemetry_map: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Transforms a Supabase raw_alerts row (columns: id, timestamp, source, type, location, severity, message)
-    into a Stage 1 canonical alert format.
+    Transforms a Supabase raw_alerts row (columns: id, timestamp, source, type,
+    location, severity) into a Stage 1 canonical alert format.
+
+    `message` is ignored on purpose — see the note in the body.
     """
     # If it's already in Stage 1 canonical format (e.g. from JSON file), pass through
     if "alertId" in row and "raisedAt" in row and "position" in row:
@@ -84,14 +86,20 @@ def normalize_db_alert(
     alert_type = row.get("type") or row.get("errorCode") or "UNKNOWN_FAULT"
     location_str = row.get("location") or "YARD"
     severity = str(row.get("severity", "MEDIUM")).upper()
-    message = row.get("message", "")
 
-    # 1. Determine vehicle ID from source or message
+    # `message` is deliberately not read here. It is a human-written summary
+    # that states the diagnosis outright ("Twistlock release actuator timed
+    # out"), so anything derived from it would leak the answer into clustering
+    # and, through the incident name, into every agent prompt downstream. The
+    # column can be dropped entirely without changing this function's output —
+    # see backend/sql/006_drop_raw_alert_message.sql.
+
+    # 1. Determine vehicle ID from the emitting source or the location
     vehicle_id = None
     if source.startswith("AGV-") or source.startswith("ATT-"):
         vehicle_id = source.replace("AGV-", "ATT-")  # Aligns to Navis N4 ATT naming
-    elif "AGV-" in message or "ATT-" in message:
-        m = re.search(r"(AGV-\d+|ATT-\d+)", message)
+    elif re.search(r"(AGV-\d+|ATT-\d+)", source):
+        m = re.search(r"(AGV-\d+|ATT-\d+)", source)
         if m:
             vehicle_id = m.group(1).replace("AGV-", "ATT-")
     elif "Lane_7" in location_str or "LANE-7" in location_str or "LANE_7" in source:
@@ -134,7 +142,8 @@ def normalize_db_alert(
     is_safety = severity == "CRITICAL" and (
         "LIDAR_SAFETY" in alert_type
         or "SAFETY_FIELD" in alert_type
-        or "SAFETY" in message.upper()
+        or "SAFETY" in alert_type
+        or "EMERGENCY_STOP" in alert_type
     )
     channel = "safety" if is_safety else "telemetry"
 
@@ -164,7 +173,8 @@ def normalize_db_alert(
     conn_state = "OFFLINE" if "COMMS" in alert_type else "ONLINE"
     protective = bool(tel.get("protective_field_violation") or is_safety)
 
-    crane_id = "QC-03" if "QC-03" in message or "QC-03" in source else ("QC-04" if "QC-04" in message else None)
+    crane_match = re.search(r"(QC-\d+)", f"{source} {location_str}")
+    crane_id = crane_match.group(1) if crane_match else None
 
     return {
         "alertId": alert_id,

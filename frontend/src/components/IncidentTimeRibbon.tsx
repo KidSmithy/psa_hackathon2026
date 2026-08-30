@@ -5,6 +5,7 @@ import {
   RawAlert,
   TimeBracket,
   SeverityLevel,
+  alertText,
 } from '../types';
 
 interface IncidentTimeRibbonProps {
@@ -451,7 +452,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
                     onScrubTime(toEpochSec(alert.timestamp));
                   }}
                 >
-                  <title>{`${alert.id} • ${alert.type} • ${alert.severity}\n${alert.message}`}</title>
+                  <title>{`${alert.id} • ${alert.type} • ${alert.severity}\n${alertText(alert)}`}</title>
                 </line>
               );
             })}

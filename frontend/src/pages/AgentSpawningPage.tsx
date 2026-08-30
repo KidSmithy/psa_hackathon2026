@@ -20,7 +20,7 @@ import {
   MapPin,
   Clock
 } from 'lucide-react';
-import { ClusterWithAlerts, RawAlert } from '../types';
+import { ClusterWithAlerts, RawAlert, alertText } from '../types';
 
 interface AgentSpawningPageProps {
   cluster: ClusterWithAlerts;
@@ -373,7 +373,7 @@ export const AgentSpawningPage: React.FC<AgentSpawningPageProps> = ({
                 <div key={idx} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-start space-x-3 text-xs font-mono shadow-sm">
                   <Check className="w-4 h-4 text-nominal-emerald mt-0.5 flex-shrink-0" />
                   <div className="flex-1 space-y-0.5">
-                    <span className="text-psa-navy-dark font-bold">{alert.message}</span>
+                    <span className="text-psa-navy-dark font-bold">{alertText(alert)}</span>
                     <div className="text-[10px] text-slate-500">
                       Source: <span className="text-tuas-cyan-dark font-bold">{alert.source}</span> • Location: {alert.location} • Timestamp: {alert.timestamp}
                     </div>

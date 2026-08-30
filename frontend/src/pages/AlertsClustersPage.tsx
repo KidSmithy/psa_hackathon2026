@@ -18,7 +18,7 @@ import {
   Clock,
   Compass
 } from 'lucide-react';
-import { RawAlert, IncidentClusterRow, ClusterWithAlerts, SeverityLevel } from '../types';
+import { RawAlert, IncidentClusterRow, ClusterWithAlerts, SeverityLevel, alertText } from '../types';
 
 interface AlertsClustersPageProps {
   clusters: IncidentClusterRow[];
@@ -124,7 +124,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
           c.assigned_agent.toLowerCase().includes(q);
         const matchesAlert = c.alerts.some(a => 
           a.id.toLowerCase().includes(q) || 
-          a.message.toLowerCase().includes(q) || 
+          alertText(a).toLowerCase().includes(q) || 
           a.source.toLowerCase().includes(q)
         );
         return matchesCluster || matchesAlert;
@@ -145,7 +145,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return a.id.toLowerCase().includes(q) ||
-          a.message.toLowerCase().includes(q) ||
+          alertText(a).toLowerCase().includes(q) ||
           a.source.toLowerCase().includes(q) ||
           (a.location ? a.location.toLowerCase().includes(q) : false) ||
           a.type.toLowerCase().includes(q);
@@ -396,7 +396,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                       <span className="text-[10px] text-psa-navy font-bold uppercase tracking-wider">Telemetry Highlight:</span>
                       <div className="truncate text-psa-navy-dark font-bold text-xs">
                         {cluster.alerts.length > 0 
-                          ? `${cluster.alerts[0].id}: ${cluster.alerts[0].message}`
+                          ? `${cluster.alerts[0].id}: ${alertText(cluster.alerts[0])}`
                           : 'Telemetry nominal'}
                       </div>
                       {cluster.alerts.length > 1 && (
@@ -453,7 +453,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                               </span>
                             </div>
                             <p className="text-slate-800 text-[11px] leading-relaxed">
-                              {alert.message}
+                              {alertText(alert)}
                             </p>
                           </div>
                         ))}
@@ -499,7 +499,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                     <td className="py-3 px-4 text-psa-muted">{alert.location || '—'}</td>
                     <td className="py-3 px-4 text-tuas-teal-dark font-semibold">{alert.type}</td>
                     <td className="py-3 px-4">{getSeverityBadge(alert.severity)}</td>
-                    <td className="py-3 px-4 text-psa-navy-dark text-xs max-w-md leading-relaxed">{alert.message}</td>
+                    <td className="py-3 px-4 text-psa-navy-dark text-xs max-w-md leading-relaxed">{alertText(alert)}</td>
                   </tr>
                 ))}
               </tbody>

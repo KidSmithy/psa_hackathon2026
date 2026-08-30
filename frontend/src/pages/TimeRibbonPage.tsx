@@ -16,7 +16,8 @@ import {
 import { 
   ClusterWithAlerts, 
   RawAlert, 
-  SeverityLevel 
+  SeverityLevel,
+  alertText
 } from '../types';
 import { IncidentTimeRibbon } from '../components/IncidentTimeRibbon';
 import { TimeScrubberControls } from '../components/TimeScrubberControls';
@@ -222,7 +223,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
                             <span className="text-psa-navy">{a.id}</span>
                             <span className="text-slate-500 text-[10px]">{a.timestamp.slice(11, 19)}</span>
                           </div>
-                          <p className="text-slate-700 truncate mt-0.5">{a.message}</p>
+                          <p className="text-slate-700 truncate mt-0.5">{alertText(a)}</p>
                         </div>
                       );
                     })}

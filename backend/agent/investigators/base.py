@@ -17,6 +17,7 @@ structuring step's only job is producing valid JSON from what it already
 found — it never has to decide which tool to call.
 """
 
+import json
 import os
 from typing import Any, Callable, Literal
 
@@ -27,6 +28,39 @@ from pydantic import BaseModel, Field
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5.6-terra")
 
 SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "NOMINAL"]
+
+# The JSON every investigator returns. Appended to each domain's system prompt
+# so the contract is stated where the model reads it, and enforced by
+# with_structured_output so a chatty model still parses.
+FINDING_CONTRACT = """{
+  "incident_id": "the incident id you were given, verbatim",
+  "cluster_name": "the incident name you were given, verbatim",
+  "root_cause": "the verified root cause in one or two sentences, citing real values",
+  "evidence": {"sensor_or_field": "the value you actually read"},
+  "title": "SHORT DASHBOARD TITLE",
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | "NOMINAL",
+  "impact": "one sentence on downstream operational impact",
+  "evidence_items": ["2-5 checklist statements, each citing a number or state you found"],
+  "plc_registers": [
+    {"code": "0x7E1", "name": "ERR_TWISTLOCK_TIMEOUT", "description": "...",
+     "category": "AGV_ACTUATOR", "status": "ACTIVE_FAULT"}
+  ],
+  "recommended_actions": ["1-3 concrete operator actions, most important first"]
+}"""
+
+JSON_CONTRACT_SUFFIX = f"""
+
+You will be given machine-emitted signal only: alert TYPES and fault codes, asset ids,
+locations, severities, and sensor readings from your tools. You are NOT given any
+human-written incident summary, because one would state the diagnosis and there would be
+nothing left to investigate. Derive the cause from the values your tools return.
+
+When you have finished gathering evidence, produce your finding as JSON in exactly this
+shape, and nothing else:
+
+{FINDING_CONTRACT}
+
+Do NOT use any emojis in your thoughts, tool inputs, or findings."""
 
 
 class PlcRegister(BaseModel):
@@ -100,6 +134,37 @@ def make_investigator_node(
                 "alert supports, and say plainly if the evidence is insufficient for a "
                 "confident root cause."
             )
+
+        # The orchestrator's brief. When it assigned two specialists to one
+        # incident, `focus` is what makes the two runs different — without it
+        # both would gather the same evidence and reach the same conclusion.
+        if state.get("focus"):
+            lines.append(f"The orchestrator assigned you specifically to answer: {state['focus']}")
+        if state.get("assignment_reason"):
+            lines.append(f"Why you were assigned: {state['assignment_reason']}")
+
+        # What the camera saw. Weigh it against the telemetry rather than
+        # trusting it — a vision model can misread a scene, and the sensors are
+        # the authoritative record of machine state.
+        clips = state.get("video_findings") or []
+        if clips:
+            shown = [
+                {
+                    k: clip.get(k)
+                    for k in ("source_alert_ids", "assessment", "severity", "confidence",
+                              "summary", "observations", "entities_involved", "visual_cues")
+                    if clip.get(k) is not None
+                }
+                for clip in clips
+            ]
+            lines.append(
+                f"{len(clips)} CCTV clip(s) covering this incident were analysed by the video "
+                "agent. Treat these as observations to corroborate or contradict with sensor "
+                "data, not as fact — a vision model can misread a scene, and the sensors are "
+                "the authoritative record of machine state:\n"
+                + json.dumps(shown, indent=2)
+            )
+
         lines.append(
             "Use your tools to gather evidence, then explain the verified root cause "
             "in plain terms before you finish. Do not include any emojis."
@@ -134,6 +199,13 @@ def make_investigator_node(
         # requires — derived here rather than asked from the LLM twice in two shapes.
         finding_dict["recommended_action"] = "; ".join(finding_dict["recommended_actions"])
         finding_dict["tools_used"] = tools_used
+        # Which specialist produced this and what it was asked. With multi-agent
+        # assignment, several findings share an incident_id, so the aggregator
+        # needs to know who said what before it can reconcile them.
+        finding_dict["domain"] = node_name
+        finding_dict["focus"] = state.get("focus", "")
+        finding_dict["assignment_reason"] = state.get("assignment_reason", "")
+        finding_dict["video_informed"] = bool(state.get("video_findings"))
         return {"investigator_findings": [finding_dict]}
 
     node.__name__ = node_name

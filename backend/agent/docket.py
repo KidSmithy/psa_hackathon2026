@@ -40,7 +40,13 @@ def make_docket_node(docket_tool) -> Callable[[OverallState], Any]:
     """Takes the already-fetched submit_incident_docket tool, returns a graph node."""
 
     async def submit_docket(state: OverallState) -> dict[str, Any]:
-        findings = attach_linked_to(state["investigator_findings"], state.get("correlation"))
+        # One entry per incident, post-aggregation — submit_incident_docket
+        # would otherwise receive duplicate incident_ids when the orchestrator
+        # assigned several specialists to one incident.
+        findings = attach_linked_to(
+            state.get("aggregated_findings") or state.get("investigator_findings") or [],
+            state.get("correlation"),
+        )
         result = await docket_tool.ainvoke({"incidents": findings})
         return {"docket_result": result}
 
