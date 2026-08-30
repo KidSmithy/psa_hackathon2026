@@ -119,7 +119,7 @@ const NODE_METADATA: Record<string, { name: string; role: string; phase: number;
     phaseLabel: '3. Cross-Incident Correlation',
   },
   submit_docket: {
-    name: 'Human Governance Coordinator',
+    name: 'Human Review',
     role: 'TOS Action Dispatch & Docket Synthesis',
     phase: 4,
     phaseLabel: '4. Synthesizing Human Review Docket',
