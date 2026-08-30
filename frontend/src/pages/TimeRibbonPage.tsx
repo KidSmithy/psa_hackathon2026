@@ -198,7 +198,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
                     className="w-full flex items-center justify-center space-x-1.5 bg-gradient-to-r from-psa-navy to-tuas-cyan-dark hover:from-tuas-cyan-dark hover:to-tuas-teal text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all active:scale-95 whitespace-nowrap"
                   >
                     <Zap className="w-3.5 h-3.5 text-tuas-teal" />
-                    <span>DISPATCH AGENT</span>
+                    <span>RESOLVE INCIDENT</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
