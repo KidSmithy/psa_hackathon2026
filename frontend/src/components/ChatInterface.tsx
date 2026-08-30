@@ -153,8 +153,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       sender: 'assistant',
       timestamp: timeNow(),
       text: selectedCluster
-        ? `Welcome to PSA Incident Sherlock.\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\nLive multi-agent triage & root-cause investigation running automatically...`
-        : 'Welcome to PSA Incident Sherlock.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
+        ? `**Welcome to PSA Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
+        : '**Welcome to PSA Incident Sherlock.**\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
@@ -215,13 +215,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     let isSubscribed = true;
     const clusterId = selectedCluster.cluster_id;
-    const clusterName = selectedCluster.name;
-    const clusterLabel = `${clusterId}: ${clusterName}`;
 
     console.log('[ChatInterface] Triggering triage for:', clusterId);
     setIsSimulating(true);
 
-    const userMsgText = `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
+    const userMsgText = `Run Agentic AI investigation for ${clusterId}`;
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -354,7 +352,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsSimulating(true);
 
     const clusterLabel = clusterId || 'every active cluster';
-    const userMsgText = customQuery || `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
+    const userMsgText = customQuery || `Run Agentic AI investigation for ${clusterLabel}`;
     
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -667,7 +665,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: 'Welcome to PSA Incident Sherlock.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        text: '**Welcome to PSA Incident Sherlock.**\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
