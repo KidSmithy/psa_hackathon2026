@@ -153,8 +153,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       sender: 'assistant',
       timestamp: timeNow(),
       text: selectedCluster
-        ? `**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\n**Target Incident:** **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\n**Live multi-agent triage & root-cause investigation running automatically...**`
-        : '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
+        ? `Welcome to PSA Incident Sherlock.\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).\n\nLive multi-agent triage & root-cause investigation running automatically...`
+        : 'Welcome to PSA Incident Sherlock.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
@@ -667,7 +667,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: '**Welcome to PSA Incident Sherlock.** Live SCADA stream synchronized at 50Hz.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        text: 'Welcome to PSA Incident Sherlock.\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
@@ -697,7 +697,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 PSA INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
-                SPAWNING & HUMAN GOVERNANCE
+                RESPONSIBLE AI
               </span>
             </div>
           </div>
@@ -715,7 +715,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }`}
           >
             <Zap className={`w-3.5 h-3.5 ${isSimulating ? 'animate-spin' : 'animate-pulse'}`} />
-            <span>{isSimulating ? 'Spawning Agents...' : 'Trigger Spawn Demo'}</span>
+            <span>{isSimulating ? 'Spawning Agents...' : 'Trigger Agents - Demo'}</span>
           </button>
 
           <button
@@ -781,7 +781,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             </div>
                             <div className="flex items-center space-x-2 truncate">
                               <span className="font-bold text-slate-800">
-                                {isExpanded ? 'Multi-Agent Investigation Trajectory' : 'Investigated across multi-agent runtime'}
+                                {isExpanded ? 'Multi-Agent Investigation Trajectory' : 'Investigated across multi-agent workflow'}
                               </span>
                               <span className="text-[11px] text-slate-500 font-sans hidden sm:inline">
                                 ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''}{totalLogs > 0 ? ` · ${totalLogs} diagnostic logs` : ''})
