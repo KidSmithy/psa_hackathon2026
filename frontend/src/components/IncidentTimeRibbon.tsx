@@ -322,7 +322,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
               {peakCount} max
             </text>
             <text
-              x={TIMELINE_WIDTH + 8} y={HIST_BASELINE} fill="#3F5B66"
+              x={TIMELINE_WIDTH + 8} y={HIST_BASELINE} fill="#87A0A7"
               fontSize="7.5" fontFamily="monospace"
             >
               onsets
@@ -368,7 +368,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
               rx={4} fill="#101B20" stroke="#1E2D33" strokeWidth={0.8}
             />
             <text
-              x={TIMELINE_WIDTH + 8} y={TRACK_MID + 3} fill="#3F5B66"
+              x={TIMELINE_WIDTH + 8} y={TRACK_MID + 3} fill="#87A0A7"
               fontSize="7.5" fontFamily="monospace"
             >
               incidents
@@ -457,7 +457,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
             })}
             <text
               x={TIMELINE_WIDTH + 8} y={ALERT_STRIP_TOP + ALERT_STRIP_HEIGHT}
-              fill="#3F5B66" fontSize="7.5" fontFamily="monospace"
+              fill="#87A0A7" fontSize="7.5" fontFamily="monospace"
             >
               alerts
             </text>
@@ -568,7 +568,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold transition-all ${
                   isSelected
                     ? 'bg-sky-500/20 border-sky-400 text-sky-100'
-                    : 'bg-black/30 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
+                    : 'bg-black/40 border-slate-600 text-slate-100 hover:border-slate-400 hover:text-white'
                 }`}
               >
                 <span
@@ -576,9 +576,9 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
                   style={{ backgroundColor: colors.fill }}
                 />
                 <span>{span.clusterId}</span>
-                <span className="text-slate-500 font-normal">{formatClock(span.startSec)}</span>
+                <span className="text-slate-300 font-normal">{formatClock(span.startSec)}</span>
                 {span.isSingleton && (
-                  <span className="text-slate-500 font-normal">·1</span>
+                  <span className="text-slate-300 font-normal">·1</span>
                 )}
               </button>
             );
