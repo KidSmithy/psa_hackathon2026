@@ -41,6 +41,7 @@ from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
 from agent.stage1_bridge import STAGE1_SOURCE, get_clusters
 from agent.stage1_pipeline import fetch_raw_inputs, persist, run_stage1, to_cluster_row
+from agent.tracing import get_langfuse_handler
 import sys
 
 # Force immediate unbuffered flushing to terminal
@@ -79,6 +80,8 @@ async def lifespan(app: FastAPI):
         raise
     app.state.graph = graph
     app.state.mcp_client = client
+    # Built once, reused for every request — same reason as the graph itself.
+    app.state.langfuse_handler = get_langfuse_handler()
     logger.info("Graph built. Ready to accept requests.")
     yield
 
@@ -185,7 +188,10 @@ async def investigate(body: InvestigateRequest) -> dict[str, Any]:
     logger.info("POST /api/investigate cluster_id=%s source=%s", body.cluster_id, body.source)
     clusters = _select_clusters(body.cluster_id, body.source)
     try:
-        result = await app.state.graph.ainvoke({"clusters": clusters, "investigator_findings": []})
+        result = await app.state.graph.ainvoke(
+            {"clusters": clusters, "investigator_findings": []},
+            config={"callbacks": [app.state.langfuse_handler]},
+        )
     except Exception as exc:
         print(f"❌ [API ERROR] Investigation failed: {exc}", flush=True)
         logger.error("Investigation failed:\n%s", traceback.format_exc())
@@ -211,7 +217,9 @@ async def investigate_stream(
         yield f"data: {json.dumps({'node': 'started', 'output': {'cluster_id': cluster_id}})}\n\n"
         try:
             async for update in graph.astream(
-                {"clusters": clusters, "investigator_findings": []}, stream_mode="updates"
+                {"clusters": clusters, "investigator_findings": []},
+                stream_mode="updates",
+                config={"callbacks": [app.state.langfuse_handler]},
             ):
                 for node_name, node_output in update.items():
                     if not node_output:

@@ -44,15 +44,16 @@ def assign_investigators(state: OverallState) -> list[Send]:
     """Conditional-edge function: fans one Send() out per cluster."""
     sends = []
     for cluster_id, cluster in state["clusters"].items():
+        domain = resolve_domain(cluster)
         sends.append(
             Send(
-                "investigator",
+                domain,
                 {
                     "cluster_id": cluster_id,
                     "cluster_name": cluster["cluster_name"],
                     "target_entity": cluster["target_entity"],
                     "matched_alerts": cluster.get("matched_alerts", []),
-                    "domain": resolve_domain(cluster),
+                    "domain": domain,
                     # Open clustering means an investigator can't assume it
                     # already knows the scenario, so it is handed the problem
                     # type and the concrete assets involved.
