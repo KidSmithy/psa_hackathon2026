@@ -73,6 +73,14 @@ Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operation
 
 ---
 
+## System Architecture Diagram
+
+![System Architecture Diagram](gallery/System%20Architecture%20Diagram.png)
+
+The full pipeline, left to right: `raw_alerts` feeds Stage 1's open clustering, which produces incidents for the Video Analyst Agent to review. The Orchestrator Agent then assigns one to three specialist investigator agents in parallel. Their findings are merged by the Aggregator, linked to related incidents by the Correlation Agent, and finally handed to a human to accept or reject.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
