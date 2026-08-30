@@ -576,25 +576,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     e.preventDefault();
     if (!inputValue.trim() || isSimulatingRef.current) return;
 
-    const lower = inputValue.toLowerCase();
     const currentText = inputValue;
     setInputValue('');
 
-    // Simple keyword heuristic to a real cluster_id — not real NLU intent
-    // parsing, just enough to route a free-text query somewhere sensible.
-    let clusterId: string | undefined;
-    if (lower.includes('bcss') || lower.includes('charger') || lower.includes('thermal') || lower.includes('cluster b')) {
-      clusterId = 'CLUSTER-B';
-    } else if (lower.includes('sector a') || lower.includes('battery') || lower.includes('soc') || lower.includes('cluster c')) {
-      clusterId = 'CLUSTER-C';
-    } else if (lower.includes('lane 7') || lower.includes('twistlock') || lower.includes('cluster a')) {
-      clusterId = 'CLUSTER-A';
-    } else if (lower.includes('lane 4') || lower.includes('lidar') || lower.includes('cluster d')) {
-      clusterId = 'CLUSTER-D';
-    }
-    // No match -> undefined -> investigate every active cluster.
-
-    triggerAgentSpawningSimulation(currentText, clusterId);
+    // No fixed cluster ids exist any more — Stage 1 now generates a fresh
+    // "INC-YYYY-MMDD-NNNN" id per run from whatever's actually in
+    // raw_alerts (see clustering/filter.py's generate_incident_id()), so a
+    // keyword-to-hardcoded-id guess can never reliably match. Free text
+    // always investigates every incident Stage 1 currently finds.
+    triggerAgentSpawningSimulation(currentText, undefined);
   };
 
   // Handle Authorize Action
@@ -1182,37 +1172,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <Sparkles className="w-3 h-3 text-sky-500" />
           <span>SUGGESTED:</span>
         </span>
+        {/*
+          The old per-cluster chips (Lane 7 Jam / BCSS-02 / Sector A) targeted
+          hardcoded CLUSTER-A/B/C ids from the pre-open-clustering demo data.
+          Stage 1 now generates a fresh INC-YYYY-MMDD-NNNN id per run from
+          whatever raw_alerts actually contains, so a hardcoded id can never
+          reliably match a real incident any more — removed rather than kept
+          pointing at ids that no longer exist.
+        */}
         <button
           type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate Lane 7 Jam (CLUSTER-A)', 'CLUSTER-A')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-sky-50 hover:text-sky-800 text-slate-600 border border-slate-200 hover:border-sky-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          Lane 7 Jam (CLUSTER-A)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate BCSS-02 Charger Trip (CLUSTER-B)', 'CLUSTER-B')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-amber-50 hover:text-amber-900 text-slate-600 border border-slate-200 hover:border-amber-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          BCSS-02 Charger Trip (CLUSTER-B)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Investigate Sector A Battery Starvation (CLUSTER-C)', 'CLUSTER-C')}
-          disabled={isSimulating}
-          className="bg-slate-50 hover:bg-emerald-50 hover:text-emerald-900 text-slate-600 border border-slate-200 hover:border-emerald-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
-        >
-          Sector A Starvation (CLUSTER-C)
-        </button>
-        <button
-          type="button"
-          onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active cluster', undefined)}
+          onClick={() => triggerAgentSpawningSimulation('Run full multi-agent triage across every active incident', undefined)}
           disabled={isSimulating}
           className="bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap active:scale-95 cursor-pointer"
         >
-          All Clusters Demo
+          Run Investigation (all active incidents)
         </button>
       </div>
 
