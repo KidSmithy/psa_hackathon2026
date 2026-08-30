@@ -120,6 +120,14 @@ Today, these roles are fixed per pipeline stage rather than tied to an authentic
 
 ---
 
+## Future Plans
+
+The chat input on the investigation view is currently disabled and marked "Coming Soon." The plan is to open it up so PSA staff can ask follow up questions once a diagnosis has landed, for example asking an investigator agent to check one more asset or explain a specific piece of evidence, without having to rerun the whole investigation.
+
+That interface will ship with guardrails, not as an open ended chatbot. Questions will be scoped to the current incident's own evidence rather than free form prompting, any follow up action will still go through the same tool level RBAC enforcement described above, and the agent will be restricted to answering and citing evidence rather than taking or recommending new actions outside its investigator role. Input length limits and rate limiting will also be enforced to reduce the risk of prompt injection and misuse.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
