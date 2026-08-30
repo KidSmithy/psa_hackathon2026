@@ -1,6 +1,19 @@
-# PSA Hackathon 2026 - Automated Port Terminal Incident Investigation Platform
+# PSA Tuas Smart Port Operations - Powered by Sherlock AI
 
 This repository contains the full-stack system for the PSA Automated Port Terminal Incident Investigation platform, featuring real-time SCADA telemetry correlation, FastMCP micro-servers, deterministic spatial-temporal clustering (ST-DBSCAN + Yard Topology), LangGraph multi-agent orchestration, Supabase integration, and a React-based operator console with live agent spawning visualization.
+
+---
+
+## Table of Contents
+
+1. [What is Sherlock AI?](#what-is-sherlock-ai)
+2. [How Sherlock AI Works](#how-sherlock-ai-works)
+3. [Sherlock AI Walkthrough](#sherlock-ai-walkthrough)
+4. [System Architecture Diagram](#system-architecture-diagram)
+5. [Tech Stack Used](#tech-stack-used)
+6. [Responsible & Transparent AI](#responsible--transparent-ai)
+7. [Security](#security)
+8. [Future Plans](#future-plans)
 
 ---
 
