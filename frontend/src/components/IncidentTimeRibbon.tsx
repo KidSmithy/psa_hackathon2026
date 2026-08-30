@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from 'react';
-import { Clock, AlertTriangle, Layers } from 'lucide-react';
+import { Clock, Layers } from 'lucide-react';
 import {
   ClusterWithAlerts,
   RawAlert,
@@ -587,13 +587,8 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
       </div>
 
       {/* Footer guidance */}
-      <div className="bg-[#101B1F] border-t border-slate-700/80 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <AlertTriangle className="w-3 h-3 text-tuas-teal" />
-          Bars show how many incidents started in each time bucket. Diamonds are correlated
-          incidents, hollow circles are single-alert ones; the line is how long alerts kept arriving.
-        </span>
-        <span>Click the timeline to scrub, a marker to select.</span>
+      <div className="bg-[#101B1F] border-t border-slate-700/80 px-4 py-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+        <span>Click on the diamonds, circles or incident boxes.</span>
       </div>
     </div>
   );
