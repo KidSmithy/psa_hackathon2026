@@ -715,7 +715,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             }`}
           >
             <Zap className={`w-3.5 h-3.5 ${isSimulating ? 'animate-spin' : 'animate-pulse'}`} />
-            <span>{isSimulating ? 'Spawning Agents...' : 'Trigger Agents - Demo'}</span>
+            <span>{isSimulating ? 'Spawning Agents...' : 'Re-trigger Agents Demo'}</span>
           </button>
 
           <button

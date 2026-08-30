@@ -210,10 +210,6 @@ export const App: React.FC = () => {
       <Header
         currentView={currentView}
         onChangeView={setCurrentView}
-        onBackToAlerts={() => {
-          setSelectedCluster(null);
-          setCurrentView('yardMap');
-        }}
         totalAlertsCount={rawAlerts.length}
         totalClustersCount={clusters.length}
         isSupabaseLive={isSupabaseLive}

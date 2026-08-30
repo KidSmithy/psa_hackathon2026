@@ -1,22 +1,20 @@
 import React from 'react';
-import { 
-  Anchor, 
-  Database, 
-  Zap, 
+import {
+  Database,
+  Zap,
   ShieldAlert,
-  ArrowLeft,
   Activity,
   Compass,
   Clock,
   Layers
 } from 'lucide-react';
+import psaLogoMark from '../assets/psa-logo-mark.png';
 
 export type MainViewType = 'yardMap' | 'timeRibbon' | 'alerts' | 'spawning';
 
 interface HeaderProps {
   currentView: MainViewType;
   onChangeView: (view: MainViewType) => void;
-  onBackToAlerts?: () => void;
   totalAlertsCount: number;
   totalClustersCount: number;
   isSupabaseLive: boolean;
@@ -25,7 +23,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   onChangeView,
-  onBackToAlerts,
   totalAlertsCount,
   totalClustersCount,
   isSupabaseLive,
@@ -37,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand Identity & Header Left */}
         <div className="flex items-center space-x-3">
           <div className="bg-white/10 border border-tuas-cyan/40 p-2 rounded-xl flex items-center justify-center shadow-inner shrink-0">
-            <Anchor className="w-6 h-6 text-tuas-teal animate-pulse" />
+            <img src={psaLogoMark} alt="PSA" className="w-6 h-6 object-contain" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center flex-wrap sm:flex-nowrap gap-2">
@@ -97,17 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>3. Incident Queue</span>
             </button>
           </nav>
-        ) : (
-          onBackToAlerts && (
-            <button
-              onClick={onBackToAlerts}
-              className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs px-4 py-2 rounded-xl font-mono font-bold transition-all shadow-sm active:scale-95"
-            >
-              <ArrowLeft className="w-4 h-4 text-tuas-teal" />
-              <span>Back to Incident Queue</span>
-            </button>
-          )
-        )}
+        ) : null}
 
         {/* Status Indicators */}
         <div className="flex items-center space-x-2.5">
