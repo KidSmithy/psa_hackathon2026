@@ -21,6 +21,18 @@ Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operation
 
 ---
 
+## How Sherlock AI Works
+
+1. **Cluster raw alerts into incidents.** Sherlock AI groups raw AGV sensor alerts that describe the same underlying problem, based on their location, timing, and fault type, into a single incident.
+2. **Review any CCTV footage.** If an incident has camera footage linked to it, a video analyst agent watches the clip and reports what it sees, independent of what the sensor alerts say.
+3. **Decide who investigates.** An orchestrator agent weighs the alert data against the video finding and assigns one or more specialist investigator agents to the incident.
+4. **Investigate with real tools.** Each assigned investigator agent gathers evidence using domain specific tools, such as telemetry readings, PLC fault codes, and maintenance history, then proposes a root cause and a recommended action.
+5. **Reconcile multiple findings.** When more than one investigator agent examines the same incident, their findings are merged into a single, reconciled result, and any disagreement between them is called out rather than hidden.
+6. **Correlate related incidents.** A correlation agent checks whether separately investigated incidents actually share one underlying cause, and links them together when they do.
+7. **Hand it to a human.** Every recommendation, along with the evidence behind it, lands in a docket for a human to review. The human can accept or reject the recommended action, and no action is ever taken without that approval.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
