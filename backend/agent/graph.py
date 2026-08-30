@@ -47,6 +47,20 @@ from agent.video_analyst import video_analysis_node
 
 INVESTIGATOR_NODE_NAMES = [spec.domain for spec in INVESTIGATORS]
 
+# The two AI stages in front of the fan-out, and the three after it.
+PRE_FANOUT_NODE_NAMES = ["video_analysis", "orchestrator"]
+POST_FANOUT_NODE_NAMES = ["aggregator", "correlation", "submit_docket"]
+
+# Every node in the graph. build_graph() adds nodes by iterating these lists, so
+# this is not a parallel list that can drift out of sync — it is the definition.
+#
+# agent/server.py's SSE endpoint uses it to decide which node outputs to fold
+# into the final state. A hand-maintained set there went stale when
+# video_analysis/orchestrator/aggregator were added, so the stream silently
+# dropped `aggregated_findings` and emitted duplicate DOCKET-{incident_id} ids
+# for any incident the orchestrator gave two specialists.
+ALL_NODE_NAMES = PRE_FANOUT_NODE_NAMES + INVESTIGATOR_NODE_NAMES + POST_FANOUT_NODE_NAMES
+
 
 async def build_graph():
     """
@@ -65,23 +79,33 @@ async def build_graph():
         filter_tools(all_tools, {"submit_incident_docket"}), "SYSTEM_COORDINATOR"
     )[0]
 
-    builder = StateGraph(OverallState)
-
-    builder.add_node("video_analysis", video_analysis_node)
-    builder.add_node("orchestrator", orchestrator_node)
-
+    # name -> node callable, for every node in the graph. Built from the same
+    # lists ALL_NODE_NAMES is built from, and asserted equal below, so the two
+    # cannot disagree.
+    node_fns = {
+        "video_analysis": video_analysis_node,
+        "orchestrator": orchestrator_node,
+        "aggregator": aggregator_node,
+        "correlation": correlation_node,
+        "submit_docket": make_docket_node(docket_tool),
+    }
     for spec in INVESTIGATORS:
         tools = bind_actor_context(
             filter_tools(all_tools, spec.module.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
         )
-        builder.add_node(
-            spec.domain,
-            make_investigator_node(spec.domain, spec.module.SYSTEM_PROMPT, tools),
+        node_fns[spec.domain] = make_investigator_node(
+            spec.domain, spec.module.SYSTEM_PROMPT, tools
         )
 
-    builder.add_node("aggregator", aggregator_node)
-    builder.add_node("correlation", correlation_node)
-    builder.add_node("submit_docket", make_docket_node(docket_tool))
+    if set(node_fns) != set(ALL_NODE_NAMES):
+        raise RuntimeError(
+            "Graph nodes and ALL_NODE_NAMES disagree — agent/server.py's stream "
+            f"relies on them matching. Difference: {set(node_fns) ^ set(ALL_NODE_NAMES)}"
+        )
+
+    builder = StateGraph(OverallState)
+    for name in ALL_NODE_NAMES:
+        builder.add_node(name, node_fns[name])
 
     builder.add_edge(START, "video_analysis")
     builder.add_edge("video_analysis", "orchestrator")

@@ -292,11 +292,18 @@ async def investigate_stream(
 
     async def event_stream() -> AsyncIterator[str]:
         final_state: dict[str, Any] = {"investigator_findings": []}
-        active_node = "coordinator"
+        active_node = "video_analysis"
         yield f"data: {json.dumps({'type': 'node_status', 'node': 'started', 'output': {'cluster_id': cluster_id}})}\n\n"
-        
-        from agent.graph import INVESTIGATOR_NODE_NAMES
-        recognized_nodes = set(INVESTIGATOR_NODE_NAMES) | {"correlation", "submit_docket"}
+
+        # From graph.py, which builds its nodes by iterating this same list. A
+        # hand-written set here went stale when video_analysis/orchestrator/
+        # aggregator were added: their outputs were never folded into
+        # final_state, so the stream fell back to raw investigator_findings and
+        # emitted duplicate DOCKET-{incident_id} ids for any incident the
+        # orchestrator gave two specialists.
+        from agent.graph import ALL_NODE_NAMES
+
+        recognized_nodes = set(ALL_NODE_NAMES)
 
         try:
             async for event in graph.astream_events(
