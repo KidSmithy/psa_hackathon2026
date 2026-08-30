@@ -78,9 +78,6 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
             <h2 className="text-base font-bold text-white font-sans">
               PAGE 2: UNIFIED INCIDENT TIMELINE
             </h2>
-            <p className="text-slate-300 text-xs font-mono">
-              When incidents happen across the whole terminal &mdash; one shared time axis, no per-cluster rows
-            </p>
           </div>
         </div>
 
@@ -132,9 +129,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
           </div>
 
           <p className="leading-relaxed text-slate-600">
-            Every incident shares one time axis. Open clustering produces as many incidents as
-            the alert stream contains &mdash; possibly hundreds &mdash; so giving each one its own
-            row stops working. The chart height is fixed regardless of the count.
+            Every incident shares one time axis.
           </p>
 
           <ul className="space-y-2 list-disc list-inside text-[11px] text-slate-700">
@@ -143,8 +138,10 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
               stacked by severity. This is the part that stays readable at scale.
             </li>
             <li>
-              <strong>Diamond:</strong> a correlated incident (2+ alerts). <strong>Hollow circle:</strong> a
-              singleton &mdash; one alert that matched nothing else.
+              <strong>Diamond:</strong> a correlated incident (2+ alerts).
+            </li>
+            <li>
+              <strong>Hollow circle:</strong> a singleton &mdash; one alert that matched nothing else.
             </li>
             <li>
               <strong>Trailing line:</strong> how long that incident kept producing alerts.
