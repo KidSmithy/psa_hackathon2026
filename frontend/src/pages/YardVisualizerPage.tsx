@@ -132,7 +132,7 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
             className="flex items-center space-x-1.5 text-white bg-white/10 hover:bg-white/20 border border-tuas-cyan/40 px-3.5 py-1.5 rounded-xl transition-all shadow-sm active:scale-95 font-bold"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-tuas-teal ${isLoading ? 'animate-spin' : ''}`} />
-            <span>{isLoading ? 'Syncing...' : 'Sync Supabase'}</span>
+            <span>{isLoading ? 'Syncing...' : 'Sync Database'}</span>
           </button>
         </div>
       </div>

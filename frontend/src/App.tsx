@@ -212,7 +212,6 @@ export const App: React.FC = () => {
         onChangeView={setCurrentView}
         totalAlertsCount={rawAlerts.length}
         totalClustersCount={clusters.length}
-        isSupabaseLive={isSupabaseLive}
       />
 
       {/* Main Page Viewport Container */}
