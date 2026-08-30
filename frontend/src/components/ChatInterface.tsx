@@ -47,7 +47,6 @@ interface ChatMessage {
     agentRole: string;
     cluster: string;
     toolsUsed: { tool: string; args: Record<string, any> }[];
-    logs: string[];
   };
   docket?: DocketItem;
 }
@@ -157,7 +156,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const [inputValue, setInputValue] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [expandedTrajectories, setExpandedTrajectories] = useState<Record<string, boolean>>({});
 
   // Human-in-the-loop Action States
@@ -268,7 +266,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `docket-${Date.now()}-${i}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
+                text: '`Investigation complete:`',
                 docket: sanitizeDocket(docket),
               }]);
             });
@@ -281,9 +279,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const finding = event.output.investigator_findings?.[0];
           if (!finding) return;
           const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const rootCauseClean = stripEmojis(finding.root_cause || '');
           const roleClean = stripEmojis(finding.title || '');
-          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
 
           setMessages(prev => [...prev, {
             id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
@@ -297,10 +293,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               agentRole: roleClean,
               cluster: finding.incident_id,
               toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
-              logs: [
-                `Root cause: ${rootCauseClean}`,
-                ...evidenceClean,
-              ],
             },
           }]);
         } else if (event.node === 'correlation') {
@@ -404,7 +396,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `docket-${Date.now()}-${i}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
+                text: '`Investigation complete:`',
                 docket: sanitizeDocket(docket),
               }]);
             });
@@ -417,9 +409,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const finding = event.output.investigator_findings?.[0];
           if (!finding) return;
           const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const rootCauseClean = stripEmojis(finding.root_cause || '');
           const roleClean = stripEmojis(finding.title || '');
-          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
 
           setMessages(prev => [...prev, {
             id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
@@ -433,10 +423,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               agentRole: roleClean,
               cluster: finding.incident_id,
               toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
-              logs: [
-                `Root cause: ${rootCauseClean}`,
-                ...evidenceClean,
-              ],
             },
           }]);
         } else if (event.node === 'correlation') {
@@ -508,12 +494,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
             cluster: 'Cluster A (Revision 2)',
             toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
-            logs: [
-              `Discarded original constraint path: "${rejectedAction}"`,
-              'Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
-              'Automated hydraulic back-pressure cycle simulated: 3x pulses @ 290 bar',
-              'Secondary resolution docket generated with zero human crew dependency'
-            ]
           }
         };
         setMessages(prev => [...prev, replanSpawnMsg]);
@@ -640,10 +620,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setTempInput(prev => ({ ...prev, [actionText]: '' }));
   };
 
-  const toggleLogExpand = (msgId: string) => {
-    setExpandedLogs(prev => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
-
   const handleReset = () => {
     clearAllTimeouts();
     activeStreamCleanupRef.current?.();
@@ -721,7 +697,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/40">
         {groupMessagesIntoTurns(messages).map((turn) => {
           const isExpanded = !!expandedTrajectories[turn.id];
-          const totalLogs = turn.trajectoryMessages.reduce((sum, m) => sum + (m.spawningProgress?.logs?.length || 0), 0);
           const subAgentCount = turn.trajectoryMessages.filter(m => m.isSpawningAnimation).length;
 
           return (
@@ -773,7 +748,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 View Investigation Steps
                               </span>
                               <span className="text-[11px] text-slate-500 font-sans hidden sm:inline">
-                                ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''}{totalLogs > 0 ? ` · ${totalLogs} diagnostic logs` : ''})
+                                ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''})
                               </span>
                             </div>
                           </div>
@@ -837,27 +812,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         )}
                                       </div>
 
-                                      {/* Diagnostic Schema Logs */}
-                                      <div className="pt-0.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleLogExpand(tMsg.id)}
-                                          className="text-[11px] text-sky-700 hover:text-sky-800 font-semibold flex items-center space-x-1 cursor-pointer"
-                                        >
-                                          <span>Diagnostic Logs ({tMsg.spawningProgress.logs.length})</span>
-                                          {expandedLogs[tMsg.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                        </button>
-
-                                        {expandedLogs[tMsg.id] && (
-                                          <div className="mt-2 space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px]">
-                                            {tMsg.spawningProgress.logs.map((log, i) => (
-                                              <div key={i} className="text-slate-700 py-0.5">
-                                                <MarkdownRenderer content={log} />
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
                                     </div>
                                   )}
                                 </div>
