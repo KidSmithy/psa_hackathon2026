@@ -7,11 +7,12 @@
 1. [What is Sherlock AI?](#what-is-sherlock-ai)
 2. [How Sherlock AI Works](#how-sherlock-ai-works)
 3. [Sherlock AI Walkthrough](#sherlock-ai-walkthrough)
-4. [System Architecture Diagram](#system-architecture-diagram)
-5. [Tech Stack Used](#tech-stack-used)
-6. [Responsible & Transparent AI](#responsible--transparent-ai)
-7. [Security](#security)
-8. [Future Plans](#future-plans)
+4. [Key Decisions Made](#key-decisions-made)
+5. [System Architecture Diagram](#system-architecture-diagram)
+6. [Tech Stack Used](#tech-stack-used)
+7. [Responsible & Transparent AI](#responsible--transparent-ai)
+8. [Security](#security)
+9. [Future Plans](#future-plans)
 
 ---
 
@@ -70,6 +71,16 @@ Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operation
 9. **Suggested Actions**
    ![Suggested Actions](gallery/Suggested%20Actions.png)
    The human in the loop panel, where PSA staff accept or reject the agent's recommended action.
+
+---
+
+## Key Decisions Made
+
+1. **Clustering decides "is this one event," the orchestrator separately decides "who investigates it."** These used to be the same deterministic lookup; splitting them is what lets a single incident get 1 to 3 specialists based on real judgment (alert data plus CCTV footage) instead of a fixed problem-type-to-agent table.
+
+2. **No agent executes anything. A human always has the final call.** Every finding is evidence-backed and lands in a docket; PSA staff accept or reject it. There's no autonomous action path to secure or govern in the first place, because there isn't one.
+
+3. **Each specialist investigator gets its own named LangGraph node, not one shared dispatcher.** A single "investigator" node that reads a `domain` field internally would need less wiring, but every trace would look identical from the outside no matter which specialist actually ran. Four separately-named nodes cost more boilerplate in exchange for real per-agent observability; every Langfuse trace or graph render shows exactly which specialist handled a given incident.
 
 ---
 
