@@ -49,7 +49,7 @@ interface ChatMessage {
     cluster: string;
     tokensUsed: number;
     maxTokens: number;
-    activeTool: string;
+    toolsUsed: { tool: string; args: Record<string, any> }[];
     logs: string[];
   };
   docket?: DocketItem;
@@ -70,7 +70,7 @@ interface TurnGroup {
 const isTrajectoryMessage = (msg: ChatMessage): boolean => {
   if (msg.isSpawningAnimation) return true;
   if (msg.text && (
-    msg.text.includes('Coordinator Assessment Activated') ||
+    msg.text.includes('Assigning Investigator Agent') ||
     msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
     msg.text.includes('Correlation agent:') ||
     msg.text.includes('Dynamic Alternative Tool Query')
@@ -231,7 +231,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterId}** to the investigator assigned by its problem type.`
+      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterId}** to the investigator agent assigned by its problem type.`
     };
 
     setMessages(prev => {
@@ -301,7 +301,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               cluster: finding.incident_id,
               tokensUsed: 100,
               maxTokens: 100,
-              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
+              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
               logs: [
                 `Root cause: ${rootCauseClean}`,
                 ...evidenceClean,
@@ -365,7 +365,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterLabel}** to the investigator assigned by its problem type.`
+      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterLabel}** to the investigator agent assigned by its problem type.`
     };
 
     setMessages(prev => {
@@ -439,7 +439,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               cluster: finding.incident_id,
               tokensUsed: 100,
               maxTokens: 100,
-              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
+              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
               logs: [
                 `Root cause: ${rootCauseClean}`,
                 ...evidenceClean,
@@ -516,7 +516,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             cluster: 'Cluster A (Revision 2)',
             tokensUsed: 1620,
             maxTokens: 2000,
-            activeTool: 'mcp-terminal-telemetry::get_alternate_bypass_routing(from=Lane-07, via=Lane-06)',
+            toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
             logs: [
               `Discarded original constraint path: "${rejectedAction}"`,
               'Topo query: Calculated Lane 6 bypass clearance (Headway: 42m available)',
@@ -779,7 +779,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             </div>
                             <div className="flex items-center space-x-2 truncate">
                               <span className="font-bold text-slate-800">
-                                {isExpanded ? 'Multi-Agent Investigation Trajectory' : 'Investigated across multi-agent workflow'}
+                                View Investigation Steps
                               </span>
                               <span className="text-[11px] text-slate-500 font-sans hidden sm:inline">
                                 ({turn.trajectoryMessages.length} step{turn.trajectoryMessages.length > 1 ? 's' : ''}{subAgentCount > 0 ? ` · ${subAgentCount} domain investigator` : ''}{totalLogs > 0 ? ` · ${totalLogs} diagnostic logs` : ''})
@@ -833,10 +833,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         </span>
                                       </div>
 
-                                      <div className="text-[11px] text-slate-600 flex items-center gap-1.5 px-1 truncate">
-                                        <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
-                                        <span className="text-slate-400">Active Tool:</span>
-                                        <span className="font-bold text-slate-800 truncate">{tMsg.spawningProgress.activeTool}</span>
+                                      <div className="text-[11px] text-slate-600 px-1 space-y-1">
+                                        <div className="flex items-center gap-1.5 text-slate-400">
+                                          <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
+                                          <span>MCP Tools Called ({tMsg.spawningProgress.toolsUsed.length}):</span>
+                                        </div>
+                                        {tMsg.spawningProgress.toolsUsed.length === 0 ? (
+                                          <div className="pl-4 text-slate-400 italic">No tool calls recorded.</div>
+                                        ) : (
+                                          <ul className="pl-4 space-y-0.5">
+                                            {tMsg.spawningProgress.toolsUsed.map((t, i) => (
+                                              <li key={i} className="font-bold text-slate-800 truncate">
+                                                {t.tool}
+                                                {Object.keys(t.args || {}).length > 0 && (
+                                                  <span className="font-normal text-slate-500">
+                                                    ({Object.entries(t.args).map(([k, v]) => `${k}=${v}`).join(', ')})
+                                                  </span>
+                                                )}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        )}
                                       </div>
 
                                       {/* Diagnostic Schema Logs */}
@@ -935,7 +952,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 font-mono">
                                   <span className="flex items-center gap-1.5">
                                     <Wrench className="w-3.5 h-3.5 text-sky-600" />
-                                    <span>HUMAN GOVERNANCE DISPATCH</span>
+                                    <span>HUMAN IN THE LOOP</span>
                                   </span>
                                   <span className="text-[10px] text-slate-400 font-normal">Operator Action Required</span>
                                 </div>
