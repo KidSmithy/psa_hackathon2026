@@ -59,8 +59,8 @@ const INITIAL_LIVE_STATE: LiveTriageState = {
   activeNode: 'coordinator',
   agentName: 'System Coordinator',
   agentRole: 'Dynamic Incident Fan-Out & Routing',
-  currentPhase: 1,
-  phaseLabel: '1. Routing & Context Assignment',
+  currentPhase: 0,
+  phaseLabel: 'Initializing',
   streamedThought: '',
   toolCalls: [],
 };
@@ -69,8 +69,8 @@ const NODE_METADATA: Record<string, { name: string; role: string; phase: number;
   coordinator: {
     name: 'System Coordinator',
     role: 'Dynamic Incident Fan-Out & Routing',
-    phase: 1,
-    phaseLabel: '1. Routing & Context Assignment',
+    phase: 0,
+    phaseLabel: 'Initializing',
   },
   video_analysis: {
     name: 'CCTV Video Analyst Agent',
@@ -81,50 +81,50 @@ const NODE_METADATA: Record<string, { name: string; role: string; phase: number;
   orchestrator: {
     name: 'Orchestrator Agent',
     role: 'Investigator Selection from Cause, Telemetry & Footage',
-    phase: 1,
-    phaseLabel: '1. Orchestrator Agent Assignment',
-  },
-  aggregator: {
-    name: 'Findings Aggregator',
-    role: 'Multi-Specialist Reconciliation & Conflict Surfacing',
-    phase: 3,
-    phaseLabel: '3. Reconciling Specialist Findings',
+    phase: 2,
+    phaseLabel: '2. Orchestrator Agent Assignment',
   },
   lane_investigator: {
     name: 'Lane Operations Specialist',
     role: 'Transfer Lane Telemetry & PLC Register Diagnostics',
-    phase: 2,
-    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+    phase: 3,
+    phaseLabel: '3. MCP Telemetry & PLC Diagnostics',
   },
   power_investigator: {
     name: 'BCSS Power Specialist',
     role: 'Charger Telemetry & Thermal Overload Diagnostics',
-    phase: 2,
-    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+    phase: 3,
+    phaseLabel: '3. MCP Telemetry & PLC Diagnostics',
   },
   fleet_power_investigator: {
     name: 'Fleet Power Specialist',
     role: 'Fleet State-of-Charge & Grid Load Balancing',
-    phase: 2,
-    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+    phase: 3,
+    phaseLabel: '3. MCP Telemetry & PLC Diagnostics',
   },
   general_investigator: {
     name: 'General Systems Specialist',
     role: 'Multi-Domain Anomaly Triage',
-    phase: 2,
-    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+    phase: 3,
+    phaseLabel: '3. MCP Telemetry & PLC Diagnostics',
+  },
+  aggregator: {
+    name: 'Findings Aggregator',
+    role: 'Multi-Specialist Reconciliation & Conflict Surfacing',
+    phase: 4,
+    phaseLabel: '4. Reconciling Specialist Findings',
   },
   correlation: {
     name: 'Cross-Incident Correlation Agent',
     role: 'Causal Linkage & Shared-Root Synthesis',
-    phase: 3,
-    phaseLabel: '3. Cross-Incident Correlation',
+    phase: 5,
+    phaseLabel: '5. Cross-Incident Correlation',
   },
   submit_docket: {
     name: 'Human Review',
     role: 'TOS Action Dispatch & Docket Synthesis',
-    phase: 4,
-    phaseLabel: '4. Synthesizing Human Review Docket',
+    phase: 6,
+    phaseLabel: '6. Synthesizing Human Review Docket',
   },
 };
 
@@ -369,7 +369,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const meta = NODE_METADATA[nodeKey] || {
             name: nodeKey,
             role: 'Active Domain Sub-Graph Worker',
-            phase: 2,
+            phase: 3,
             phaseLabel: `Running ${nodeKey}`,
           };
           setLiveTriageState(prev => ({
