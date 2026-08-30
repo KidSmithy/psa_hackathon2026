@@ -123,11 +123,20 @@ Important:
 """
 
 
+def _get_gemini_api_keys() -> list[str]:
+    """Returns all configured Gemini API keys in priority order."""
+    keys = []
+    for var in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY2", "GOOGLE_API_KEY2"]:
+        val = os.getenv(var, "").strip()
+        if val and val not in keys:
+            keys.append(val)
+    return keys
+
+
 # Gemini's Files API charges an upload per call; the same clip is reused across
 # incidents that share a camera, so upload handles are cached for the process.
-# Best-effort: a race between two incidents on the same clip costs one duplicate
-# upload, which is cheaper than serialising every analysis behind a lock.
-_upload_cache: dict[str, Any] = {}
+# Best-effort: cache is keyed by (api_key, uri) so each client key retains its own upload handle.
+_upload_cache: dict[tuple[str, str], Any] = {}
 
 
 def _resolve_to_local_path(footage: Footage) -> Optional[str]:
@@ -157,50 +166,64 @@ def _resolve_to_local_path(footage: Footage) -> Optional[str]:
 
 
 def _analyse_sync(footage: Footage, location: str) -> Optional[dict[str, Any]]:
-    """Blocking Gemini call. Wrapped in a thread by analyse_footage()."""
+    """Blocking Gemini call with multi-key and multi-model fallback."""
     import json
+    import time
 
     from google import genai
     from google.genai import types as genai_types
 
-    client = genai.Client()
+    api_keys = _get_gemini_api_keys()
+    if not api_keys:
+        return None
 
-    handle = _upload_cache.get(footage.uri)
-    if handle is None:
-        path = _resolve_to_local_path(footage)
-        if path is None:
-            return None
-        handle = client.files.upload(file=path)
-        # Large files are processed asynchronously; polling here keeps the
-        # caller's contract simple (it gets a finished result or None).
-        waited = 0.0
-        while getattr(handle.state, "name", "") == "PROCESSING" and waited < UPLOAD_TIMEOUT_S:
-            import time
-
-            time.sleep(2)
-            waited += 2
-            handle = client.files.get(name=handle.name)
-        if getattr(handle.state, "name", "") != "ACTIVE":
-            logger.warning("CCTV clip %s did not finish processing", footage.video_id)
-            return None
-        _upload_cache[footage.uri] = handle
-
-    models_to_try = [GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.7-flash"]
+    models_to_try = list(dict.fromkeys([GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.7-flash"]))
     last_exc = None
-    for model_name in list(dict.fromkeys(models_to_try)):
+
+    for key_idx, api_key in enumerate(api_keys):
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[handle, build_prompt(location)],
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=RESPONSE_SCHEMA,
-                ),
-            )
-            return json.loads(response.text)
-        except Exception as exc:
-            last_exc = exc
-            logger.warning("Gemini model %s failed: %s, trying next model", model_name, exc)
+            client = genai.Client(api_key=api_key)
+            cache_key = (api_key, footage.uri)
+            handle = _upload_cache.get(cache_key)
+
+            if handle is None:
+                path = _resolve_to_local_path(footage)
+                if path is None:
+                    return None
+                handle = client.files.upload(file=path)
+                waited = 0.0
+                while getattr(handle.state, "name", "") == "PROCESSING" and waited < UPLOAD_TIMEOUT_S:
+                    time.sleep(2)
+                    waited += 2
+                    handle = client.files.get(name=handle.name)
+                if getattr(handle.state, "name", "") != "ACTIVE":
+                    logger.warning("CCTV clip %s did not finish processing with key #%d", footage.video_id, key_idx + 1)
+                    continue
+                _upload_cache[cache_key] = handle
+
+            for model_name in models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[handle, build_prompt(location)],
+                        config=genai_types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=RESPONSE_SCHEMA,
+                        ),
+                    )
+                    return json.loads(response.text)
+                except Exception as model_exc:
+                    last_exc = model_exc
+                    logger.warning(
+                        "Gemini key #%d model %s failed: %s, trying next option",
+                        key_idx + 1,
+                        model_name,
+                        model_exc,
+                    )
+        except Exception as key_exc:
+            last_exc = key_exc
+            logger.warning("Gemini key #%d failed: %s, falling back to next key", key_idx + 1, key_exc)
+
     if last_exc:
         raise last_exc
     return None
@@ -211,14 +234,14 @@ async def analyse_footage(footage: Footage, location: str) -> Optional[dict[str,
     Returns the video finding dict, or None if analysis was not possible.
     Never raises — the caller treats "no finding" and "analysis failed" alike.
     """
-    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-        logger.info("GEMINI_API_KEY not set; skipping video analysis for %s", footage.video_id)
+    if not _get_gemini_api_keys():
+        logger.info("No GEMINI_API_KEY or GEMINI_API_KEY2 set; skipping video analysis for %s", footage.video_id)
         return None
 
     try:
         finding = await asyncio.to_thread(_analyse_sync, footage, location)
     except Exception:
-        logger.warning("Video analysis failed for %s", footage.video_id, exc_info=True)
+        logger.warning("Video analysis failed across all Gemini keys for %s", footage.video_id, exc_info=True)
         return None
 
     if finding is None:
