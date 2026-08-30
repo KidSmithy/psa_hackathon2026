@@ -173,7 +173,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
                     : 'TIMELINE INSPECTION DRAWER'}
                 </span>
               </div>
-              {selectedCluster && (
+              {selectedCluster && selectedCluster.alerts.length > 1 && (
                 <span className="text-[10px] bg-tuas-teal/20 text-psa-navy px-2 py-0.5 rounded font-bold whitespace-nowrap">
                   {selectedCluster.alerts.length} Correlated Alerts
                 </span>
