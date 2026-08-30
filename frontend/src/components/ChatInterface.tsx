@@ -158,7 +158,6 @@ interface TurnGroup {
 const isTrajectoryMessage = (msg: ChatMessage): boolean => {
   if (msg.isSpawningAnimation) return true;
   if (msg.text && (
-    msg.text.includes('Assigning Investigator Agent') ||
     msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
     msg.text.includes('Correlation agent:') ||
     msg.text.includes('CCTV Video Analyst:') ||
@@ -313,7 +312,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const clusterLabel = clusterId || 'every active cluster';
     const userMsgText = customQuery || `Run Agentic AI investigation for ${clusterLabel}`;
-    
+
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -321,16 +320,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       text: userMsgText,
     };
 
-    const coordMsg: ChatMessage = {
-      id: `coord-${Date.now()}`,
-      sender: 'assistant',
-      timestamp: timeNow(),
-      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterLabel}** to the investigator agent assigned by its problem type.`
-    };
-
     setMessages(prev => {
       if (prev.some(m => m.text === userMsgText)) return prev;
-      return [...prev, userMsg, coordMsg];
+      return [...prev, userMsg];
     });
 
     const finish = () => {
