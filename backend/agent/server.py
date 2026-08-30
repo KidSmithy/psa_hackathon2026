@@ -31,10 +31,21 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
 
+import os
+import re
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+for fname in [".env", "config.env", ".env.production"]:
+    env_file = Path(__file__).resolve().parent.parent / fname
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file)
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
@@ -58,7 +69,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("psa_agent.server")
 
-FRONTEND_ORIGINS = [
+DEFAULT_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:5173",
@@ -66,6 +77,8 @@ FRONTEND_ORIGINS = [
     "http://127.0.0.1:3001",
     "http://127.0.0.1:5173",
 ]
+custom_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+FRONTEND_ORIGINS = DEFAULT_ORIGINS + [o.strip() for o in custom_origins_env.split(",") if o.strip()]
 
 
 @asynccontextmanager
@@ -88,13 +101,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PSA Incident Triage Agent API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=FRONTEND_ORIGINS,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if "*" in FRONTEND_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=FRONTEND_ORIGINS,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 class InvestigateRequest(BaseModel):
@@ -111,18 +132,42 @@ class PersistRequest(BaseModel):
 
 
 def _select_clusters(cluster_id: Optional[str], source: Optional[str] = None) -> dict[str, Any]:
-    clusters = get_clusters(source=source)
+    # Auto-detect source if not explicitly provided
+    chosen_source = source
+    if chosen_source is None and cluster_id:
+        if cluster_id.upper().startswith("CLUSTER-"):
+            chosen_source = "table"
+        elif cluster_id.upper().startswith("INC-"):
+            chosen_source = "live"
+
+    try:
+        clusters = get_clusters(source=chosen_source)
+    except Exception as exc:
+        logger.warning("Failed to get clusters with source=%s: %s", chosen_source, exc)
+        clusters = {}
+
     if cluster_id is None:
-        return clusters
-    if cluster_id not in clusters:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Unknown cluster_id '{cluster_id}'. Incident ids are generated per Stage 1 "
-                f"run — currently available: {sorted(clusters)}"
-            ),
-        )
-    return {cluster_id: clusters[cluster_id]}
+        return clusters if clusters else get_clusters(source="table")
+
+    if cluster_id in clusters:
+        return {cluster_id: clusters[cluster_id]}
+
+    # Fallback to alternative source if not found in primary
+    alt_source = "table" if (chosen_source or STAGE1_SOURCE) == "live" else "live"
+    try:
+        alt_clusters = get_clusters(source=alt_source)
+        if cluster_id in alt_clusters:
+            logger.info("Found cluster_id '%s' in fallback source '%s'", cluster_id, alt_source)
+            return {cluster_id: alt_clusters[cluster_id]}
+    except Exception as exc:
+        logger.warning("Fallback source '%s' failed: %s", alt_source, exc)
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"Unknown cluster_id '{cluster_id}'. Available in primary ({chosen_source or STAGE1_SOURCE}): {sorted(clusters)}"
+        ),
+    )
 
 
 def _finalize(result: dict[str, Any]) -> dict[str, Any]:
@@ -210,6 +255,30 @@ async def investigate(body: InvestigateRequest) -> dict[str, Any]:
     return _finalize(result)
 
 
+def _format_tool_output(output: Any) -> Any:
+    """Extracts a clean serializable string/dict from tool output objects."""
+    if output is None:
+        return ""
+    try:
+        if isinstance(output, list):
+            extracted = []
+            for item in output:
+                if hasattr(item, "text"):
+                    extracted.append(item.text)
+                elif isinstance(item, dict) and "text" in item:
+                    extracted.append(item["text"])
+                elif isinstance(item, str):
+                    extracted.append(item)
+                else:
+                    extracted.append(str(item))
+            return "\n".join(extracted) if extracted else str(output)
+        if isinstance(output, (dict, str, int, float, bool)):
+            return output
+        return str(output)
+    except Exception:
+        return str(output)
+
+
 @app.get("/api/investigate/stream")
 async def investigate_stream(
     cluster_id: Optional[str] = Query(default=None),
@@ -223,37 +292,75 @@ async def investigate_stream(
 
     async def event_stream() -> AsyncIterator[str]:
         final_state: dict[str, Any] = {"investigator_findings": []}
-        yield f"data: {json.dumps({'node': 'started', 'output': {'cluster_id': cluster_id}})}\n\n"
+        active_node = "coordinator"
+        yield f"data: {json.dumps({'type': 'node_status', 'node': 'started', 'output': {'cluster_id': cluster_id}})}\n\n"
+        
+        from agent.graph import INVESTIGATOR_NODE_NAMES
+        recognized_nodes = set(INVESTIGATOR_NODE_NAMES) | {"correlation", "submit_docket"}
+
         try:
-            async for update in graph.astream(
+            async for event in graph.astream_events(
                 {"clusters": clusters, "investigator_findings": []},
-                stream_mode="updates",
+                version="v2",
                 config={"callbacks": [app.state.langfuse_handler]},
             ):
-                for node_name, node_output in update.items():
-                    if not node_output:
-                        continue
-                    print(f"🤖 [LangGraph Node Complete] node={node_name} keys={list(node_output.keys())}", flush=True)
-                    logger.info("node finished: %s -> keys=%s", node_name, list(node_output.keys()))
-                    for key, value in node_output.items():
-                        if key == "investigator_findings":
-                            # Appended, not replaced: parallel investigators each
-                            # emit their own list and the stream sees them one at
-                            # a time.
-                            final_state["investigator_findings"] = final_state.get(
-                                "investigator_findings", []
-                            ) + value
-                        else:
-                            final_state[key] = value
-                    yield f"data: {json.dumps({'node': node_name, 'output': node_output})}\n\n"
+                event_kind = event.get("event")
+                event_name = event.get("name", "")
+                data = event.get("data", {})
+
+                # 1. Track Node Starts
+                if event_kind == "on_chain_start" and event_name in recognized_nodes:
+                    active_node = event_name
+                    print(f"🤖 [LangGraph Node Start] node={event_name}", flush=True)
+                    yield f"data: {json.dumps({'type': 'node_status', 'node': event_name, 'status': 'running'})}\n\n"
+
+                # 2. Stream Real-Time Thoughts / Reasoning
+                elif event_kind == "on_chat_model_stream":
+                    chunk = data.get("chunk")
+                    if chunk and getattr(chunk, "content", None):
+                        content_str = chunk.content if isinstance(chunk.content, str) else ""
+                        if content_str:
+                            yield f"data: {json.dumps({'type': 'thought', 'node': active_node, 'chunk': content_str})}\n\n"
+
+                # 3. Stream MCP Tool Invocations
+                elif event_kind == "on_tool_start":
+                    tool_name = event_name
+                    tool_input = data.get("input", {})
+                    # Clean internal actor_context from front-end display if present
+                    if isinstance(tool_input, dict) and "actor_context" in tool_input:
+                        tool_input = {k: v for k, v in tool_input.items() if k != "actor_context"}
+                    print(f"🛠️ [MCP Tool Call] {tool_name}: {tool_input}", flush=True)
+                    yield f"data: {json.dumps({'type': 'tool_start', 'node': active_node, 'tool': tool_name, 'input': tool_input, 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
+
+                elif event_kind == "on_tool_end":
+                    tool_name = event_name
+                    tool_output = _format_tool_output(data.get("output"))
+                    print(f"✅ [MCP Tool Result] {tool_name} completed", flush=True)
+                    yield f"data: {json.dumps({'type': 'tool_end', 'node': active_node, 'tool': tool_name, 'output': tool_output, 'status': 'completed'})}\n\n"
+
+                # 4. Track Node Completions and Accumulate Final State
+                elif event_kind == "on_chain_end" and event_name in recognized_nodes:
+                    node_output = data.get("output")
+                    if isinstance(node_output, dict):
+                        print(f"🤖 [LangGraph Node Complete] node={event_name} keys={list(node_output.keys())}", flush=True)
+                        for key, value in node_output.items():
+                            if key == "investigator_findings":
+                                final_state["investigator_findings"] = final_state.get(
+                                    "investigator_findings", []
+                                ) + value
+                            else:
+                                final_state[key] = value
+                        yield f"data: {json.dumps({'type': 'node_output', 'node': event_name, 'output': node_output})}\n\n"
+
         except Exception as exc:
             print(f"❌ [API STREAM ERROR] {exc}", flush=True)
             logger.error("Investigation stream failed:\n%s", traceback.format_exc())
-            yield f"data: {json.dumps({'node': 'error', 'output': {'message': str(exc)}})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'node': 'error', 'output': {'message': str(exc)}})}\n\n"
             return
 
         print(f"🏁 [API STREAM COMPLETE] cluster_id={cluster_id}", flush=True)
         logger.info("GET /api/investigate/stream cluster_id=%s complete", cluster_id)
-        yield f"data: {json.dumps({'node': 'complete', 'output': _finalize(final_state)})}\n\n"
+        yield f"data: {json.dumps({'type': 'complete', 'node': 'complete', 'output': _finalize(final_state)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+

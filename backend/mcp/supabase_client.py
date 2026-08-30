@@ -8,9 +8,10 @@ from typing import Optional
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-# Locate .env from backend directory
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+for fname in [".env", "config.env", ".env.production"]:
+    env_file = Path(__file__).resolve().parent.parent / fname
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file)
 
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
 SUPABASE_KEY: Optional[str] = os.getenv("SUPABASE_KEY")

@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
               </h1>
               {currentView === 'spawning' && (
                 <span className="bg-tuas-cyan/20 text-tuas-cyan border border-tuas-cyan/40 text-[10px] px-2.5 py-0.5 rounded font-mono font-bold tracking-wider hidden sm:inline-block whitespace-nowrap shrink-0">
-                  AGENT TRIAGE RUNTIME
+                  PORT INCIDENT SHERLOCK
                 </span>
               )}
             </div>

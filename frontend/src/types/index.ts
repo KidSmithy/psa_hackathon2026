@@ -7,11 +7,10 @@ export interface RawAlert {
   type: string;
   location?: string;
   severity: SeverityLevel;
-  // Optional because backend/sql/006 drops this column: the seeded messages
-  // state the diagnosis outright, so they are withheld from every agent (see
-  // backend/agent/facts.py). Read it through alertText() so the UI degrades to
-  // the alert type instead of rendering "undefined".
   message?: string;
+  video_id?: string | null;
+  video_filename?: string | null;
+  video_url?: string | null;
   isFilteredNoise?: boolean;
 }
 

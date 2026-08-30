@@ -34,6 +34,80 @@ interface ActionReviewState {
   overrideText?: string;
 }
 
+export interface LiveToolCall {
+  id: string;
+  tool: string;
+  input?: any;
+  output?: any;
+  status: 'running' | 'completed';
+  timestamp: string;
+}
+
+export interface LiveTriageState {
+  activeNode: string;
+  agentName: string;
+  agentRole: string;
+  currentPhase: number;
+  phaseLabel: string;
+  streamedThought: string;
+  toolCalls: LiveToolCall[];
+}
+
+const INITIAL_LIVE_STATE: LiveTriageState = {
+  activeNode: 'coordinator',
+  agentName: 'System Coordinator',
+  agentRole: 'Dynamic Incident Fan-Out & Routing',
+  currentPhase: 1,
+  phaseLabel: '1. Routing & Context Assignment',
+  streamedThought: '',
+  toolCalls: [],
+};
+
+const NODE_METADATA: Record<string, { name: string; role: string; phase: number; phaseLabel: string }> = {
+  coordinator: {
+    name: 'System Coordinator',
+    role: 'Dynamic Incident Fan-Out & Routing',
+    phase: 1,
+    phaseLabel: '1. Routing & Context Assignment',
+  },
+  lane_investigator: {
+    name: 'Lane Operations Specialist',
+    role: 'Transfer Lane Telemetry & PLC Register Diagnostics',
+    phase: 2,
+    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+  },
+  power_investigator: {
+    name: 'BCSS Power Specialist',
+    role: 'Charger Telemetry & Thermal Overload Diagnostics',
+    phase: 2,
+    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+  },
+  fleet_power_investigator: {
+    name: 'Fleet Power Specialist',
+    role: 'Fleet State-of-Charge & Grid Load Balancing',
+    phase: 2,
+    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+  },
+  general_investigator: {
+    name: 'General Systems Specialist',
+    role: 'Multi-Domain Anomaly Triage',
+    phase: 2,
+    phaseLabel: '2. MCP Telemetry & PLC Diagnostics',
+  },
+  correlation: {
+    name: 'Cross-Incident Correlation Agent',
+    role: 'Causal Linkage & Shared-Root Synthesis',
+    phase: 3,
+    phaseLabel: '3. Cross-Incident Correlation',
+  },
+  submit_docket: {
+    name: 'Human Governance Coordinator',
+    role: 'TOS Action Dispatch & Docket Synthesis',
+    phase: 4,
+    phaseLabel: '4. Synthesizing Human Review Docket',
+  },
+};
+
 interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant' | 'system';
@@ -149,13 +223,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       sender: 'assistant',
       timestamp: timeNow(),
       text: selectedCluster
-        ? `**Welcome to PSA Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
-        : '**Welcome to PSA Incident Sherlock.**\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*) or click a quick scenario trigger above to start multi-agent triage.',
+        ? `**Welcome to Port Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
+        : '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
   const [inputValue, setInputValue] = useState<string>('');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [liveTriageState, setLiveTriageState] = useState<LiveTriageState>(INITIAL_LIVE_STATE);
   const [expandedTrajectories, setExpandedTrajectories] = useState<Record<string, boolean>>({});
 
   // Human-in-the-loop Action States
@@ -171,17 +246,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   const isSimulatingRef = useRef<boolean>(false);
-  const hasAutoTriggeredRef = useRef<string | null>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const activeStreamCleanupRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const presetRejectionReasons = [
-    'Crew engaged on Berth 4 priority',
-    'Hardware false positive / nominal',
-    'Alternative bypass route preferred',
-    'Already mitigated manually'
-  ];
+  const thoughtScrollRef = useRef<HTMLDivElement>(null);
+  const toolsScrollRef = useRef<HTMLDivElement>(null);
 
   const clearAllTimeouts = () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
@@ -189,12 +258,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: isSimulating ? 'auto' : 'smooth' });
+    if (thoughtScrollRef.current) {
+      thoughtScrollRef.current.scrollTop = thoughtScrollRef.current.scrollHeight;
+    }
+    if (toolsScrollRef.current) {
+      toolsScrollRef.current.scrollTop = toolsScrollRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isSimulating, activeFormMode]);
+  }, [messages, isSimulating, activeFormMode, liveTriageState.streamedThought, liveTriageState.toolCalls, liveTriageState.currentPhase]);
 
   // Clean up timeouts and any open SSE stream on unmount
   useEffect(() => {
@@ -204,139 +279,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
-  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
-  useEffect(() => {
-    if (!selectedCluster?.cluster_id) return;
-
-    let isSubscribed = true;
-    const clusterId = selectedCluster.cluster_id;
-
-    console.log('[ChatInterface] Triggering triage for:', clusterId);
-    setIsSimulating(true);
-
-    const userMsgText = `Run Agentic AI investigation for ${clusterId}`;
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      sender: 'user',
-      timestamp: timeNow(),
-      text: userMsgText,
-    };
-
-    const coordMsg: ChatMessage = {
-      id: `coord-${Date.now()}`,
-      sender: 'assistant',
-      timestamp: timeNow(),
-      text: `**Assigning Investigator Agent**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterId}** to the investigator agent assigned by its problem type.`
-    };
-
-    setMessages(prev => {
-      if (prev.some(m => m.text === userMsgText)) return prev;
-      return [...prev, userMsg, coordMsg];
-    });
-
-    const cleanup = streamInvestigation(
-      clusterId,
-      (event: StreamEvent) => {
-        if (!isSubscribed) return;
-        if (event.node === 'started') return;
-
-        if (event.node === 'error') {
-          setMessages(prev => [...prev, {
-            id: `stream-error-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
-          }]);
-          setIsSimulating(false);
-          return;
-        }
-
-        if (event.node === 'complete') {
-          const result: InvestigateResult = event.output;
-          if (result.dockets.length === 0) {
-            setMessages(prev => [...prev, {
-              id: `docket-empty-${Date.now()}`,
-              sender: 'assistant',
-              timestamp: timeNow(),
-              text: `Investigation finished but produced no docket — check that ${clusterId} still exists in incident_clusters.`,
-            }]);
-          } else {
-            result.dockets.forEach((docket, i) => {
-              setMessages(prev => [...prev, {
-                id: `docket-${Date.now()}-${i}`,
-                sender: 'assistant',
-                timestamp: timeNow(),
-                text: '`Investigation complete:`',
-                docket: sanitizeDocket(docket),
-              }]);
-            });
-          }
-          setIsSimulating(false);
-          return;
-        }
-
-        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
-          const finding = event.output.investigator_findings?.[0];
-          if (!finding) return;
-          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const roleClean = stripEmojis(finding.title || '');
-
-          setMessages(prev => [...prev, {
-            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            isSpawningAnimation: true,
-            spawningProgress: {
-              stage: 2,
-              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
-              agentName: agentLabel,
-              agentRole: roleClean,
-              cluster: finding.incident_id,
-              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
-            },
-          }]);
-        } else if (event.node === 'correlation') {
-          const groups = event.output.correlation?.linked_groups || [];
-          if (groups.length > 0) {
-            setMessages(prev => [...prev, {
-              id: `corr-${Date.now()}`,
-              sender: 'assistant',
-              timestamp: timeNow(),
-              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
-            }]);
-          }
-        }
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        console.error('SSE Stream error:', err);
-        setMessages(prev => [...prev, {
-          id: `stream-err-${Date.now()}`,
-          sender: 'assistant',
-          timestamp: timeNow(),
-          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
-        }]);
-        setIsSimulating(false);
-      }
-    );
-
-    return () => {
-      isSubscribed = false;
-      cleanup();
-      setIsSimulating(false);
-    };
-  }, [selectedCluster?.cluster_id]);
-
   /**
-   * Runs a manual investigation query (e.g. from user text input or quick scenario trigger buttons).
+   * Runs a live multi-agent investigation query over Server-Sent Events (SSE).
    */
   const triggerAgentSpawningSimulation = (
     customQuery?: string,
     clusterId?: string | null
   ) => {
-    console.log('[ChatInterface] triggerAgentSpawningSimulation executing for clusterId:', clusterId);
+    console.log('[ChatInterface] Starting investigation stream for clusterId:', clusterId);
     activeStreamCleanupRef.current?.();
     setIsSimulating(true);
+    setLiveTriageState(INITIAL_LIVE_STATE);
 
     const clusterLabel = clusterId || 'every active cluster';
     const userMsgText = customQuery || `Run Agentic AI investigation for ${clusterLabel}`;
@@ -368,22 +321,156 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     activeStreamCleanupRef.current = streamInvestigation(
       clusterId,
       (event: StreamEvent) => {
-        if (event.node === 'started') return;
+        // 1. Started
+        if (event.node === 'started' || (event.type === 'node_status' && event.node === 'started')) {
+          setLiveTriageState(INITIAL_LIVE_STATE);
+          return;
+        }
 
-        if (event.node === 'error') {
+        // 2. Stream Error
+        if (event.type === 'error' || event.node === 'error') {
           setMessages(prev => [...prev, {
             id: `stream-error-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
-            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the backend logs for details.`,
           }]);
+          setLiveTriageState(INITIAL_LIVE_STATE);
           finish();
           return;
         }
 
-        if (event.node === 'complete') {
+        // 3. Node State Transitions
+        if (event.type === 'node_status' || (event.status === 'running' && event.node)) {
+          const nodeKey = event.node || 'coordinator';
+          const meta = NODE_METADATA[nodeKey] || {
+            name: nodeKey,
+            role: 'Active Domain Sub-Graph Worker',
+            phase: 2,
+            phaseLabel: `Running ${nodeKey}`,
+          };
+          setLiveTriageState(prev => ({
+            ...prev,
+            activeNode: nodeKey,
+            agentName: meta.name,
+            agentRole: meta.role,
+            currentPhase: Math.max(prev.currentPhase, meta.phase),
+            phaseLabel: meta.phaseLabel,
+          }));
+          return;
+        }
+
+        // 4. Live Streamed AI Thoughts / Reasoning
+        if (event.type === 'thought' && event.chunk) {
+          setLiveTriageState(prev => ({
+            ...prev,
+            streamedThought: prev.streamedThought + event.chunk,
+            currentPhase: Math.max(prev.currentPhase, 3),
+            phaseLabel: '3. AI Reasoning & Hypothesis Formulation',
+          }));
+          return;
+        }
+
+        // 5. Real-Time MCP Tool Call Started
+        if (event.type === 'tool_start' && event.tool) {
+          const newToolCall: LiveToolCall = {
+            id: `tool-${event.tool}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            tool: event.tool,
+            input: event.input,
+            status: 'running',
+            timestamp: event.timestamp || timeNow(),
+          };
+          setLiveTriageState(prev => ({
+            ...prev,
+            currentPhase: Math.max(prev.currentPhase, 2),
+            phaseLabel: `2. Executing MCP Tool: ${event.tool}`,
+            toolCalls: [...prev.toolCalls, newToolCall],
+          }));
+          return;
+        }
+
+        // 6. Real-Time MCP Tool Call Completed
+        if (event.type === 'tool_end' && event.tool) {
+          setLiveTriageState(prev => {
+            const toolCalls = [...prev.toolCalls];
+            let updated = false;
+            for (let i = toolCalls.length - 1; i >= 0; i--) {
+              if (toolCalls[i].tool === event.tool && toolCalls[i].status === 'running') {
+                toolCalls[i] = {
+                  ...toolCalls[i],
+                  status: 'completed',
+                  output: event.output,
+                };
+                updated = true;
+                break;
+              }
+            }
+            if (!updated) {
+              toolCalls.push({
+                id: `tool-end-${event.tool || 'tool'}-${Date.now()}`,
+                tool: event.tool || 'MCP Tool',
+                output: event.output,
+                status: 'completed',
+                timestamp: event.timestamp || timeNow(),
+              });
+            }
+            return {
+              ...prev,
+              toolCalls,
+            };
+          });
+          return;
+        }
+
+        // 7. Node Findings / Sub-Graph Completed
+        if (
+          event.type === 'node_output' ||
+          (event.node && (event.node.endsWith('_investigator') || event.node === 'investigator' || event.node === 'correlation'))
+        ) {
+          const nodeName = event.node || '';
+          if (nodeName.endsWith('_investigator') || nodeName === 'investigator') {
+            const finding = event.output?.investigator_findings?.[0];
+            if (finding) {
+              const agentLabel = stripEmojis(finding.assigned_agent || (nodeName === 'investigator' ? 'Domain Investigator' : nodeName));
+              const roleClean = stripEmojis(finding.title || '');
+
+              setMessages(prev => {
+                const spawnId = `spawn-${nodeName}-${finding.incident_id}`;
+                if (prev.some(m => m.id.startsWith(spawnId))) return prev;
+                return [...prev, {
+                  id: `${spawnId}-${Date.now()}`,
+                  sender: 'assistant',
+                  timestamp: timeNow(),
+                  isSpawningAnimation: true,
+                  spawningProgress: {
+                    stage: 2,
+                    stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
+                    agentName: agentLabel,
+                    agentRole: roleClean,
+                    cluster: finding.incident_id,
+                    toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
+                  },
+                }];
+              });
+            }
+          } else if (nodeName === 'correlation') {
+            const groups = event.output?.correlation?.linked_groups || [];
+            if (groups.length > 0) {
+              setMessages(prev => [...prev, {
+                id: `corr-${Date.now()}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
+              }]);
+            }
+          }
+          return;
+        }
+
+        // 8. Investigation Complete -> Emit Final Docket
+        if (event.type === 'complete' || event.node === 'complete') {
           const result: InvestigateResult = event.output;
-          if (result.dockets.length === 0) {
+          if (!result || result.dockets.length === 0) {
             setMessages(prev => [...prev, {
               id: `docket-empty-${Date.now()}`,
               sender: 'assistant',
@@ -401,40 +488,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               }]);
             });
           }
+          setLiveTriageState(INITIAL_LIVE_STATE);
           finish();
           return;
-        }
-
-        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
-          const finding = event.output.investigator_findings?.[0];
-          if (!finding) return;
-          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const roleClean = stripEmojis(finding.title || '');
-
-          setMessages(prev => [...prev, {
-            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            isSpawningAnimation: true,
-            spawningProgress: {
-              stage: 2,
-              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
-              agentName: agentLabel,
-              agentRole: roleClean,
-              cluster: finding.incident_id,
-              toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
-            },
-          }]);
-        } else if (event.node === 'correlation') {
-          const groups = event.output.correlation?.linked_groups || [];
-          if (groups.length > 0) {
-            setMessages(prev => [...prev, {
-              id: `corr-${Date.now()}`,
-              sender: 'assistant',
-              timestamp: timeNow(),
-              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
-            }]);
-          }
         }
       },
       (err) => {
@@ -443,103 +499,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           id: `stream-err-${Date.now()}`,
           sender: 'assistant',
           timestamp: timeNow(),
-          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
+          text: `**Stream connection to backend failed.**\nEnsure the backend server is reachable at \`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}\`.`,
         }]);
+        setLiveTriageState(INITIAL_LIVE_STATE);
         finish();
       }
     );
   };
 
-  // -------------------------------------------------------------
-  // Simulated Agent Re-Plan Flow upon Operator Rejection
-  // -------------------------------------------------------------
-  const triggerAgentReplanSimulation = (
-    rejectedAction: string,
-    reason: string,
-    docketTitle: string
-  ) => {
-    if (isSimulatingRef.current) return;
-    isSimulatingRef.current = true;
-    setIsSimulating(true);
+  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
+  useEffect(() => {
+    if (!selectedCluster?.cluster_id) return;
+    const clusterId = selectedCluster.cluster_id;
+    const clusterName = selectedCluster.name;
+    const clusterLabel = `${clusterId}: ${clusterName}`;
 
-    const userMsg: ChatMessage = {
-      id: `replan-user-${Date.now()}`,
-      sender: 'user',
-      timestamp: timeNow(),
-      text: `**[HUMAN-IN-THE-LOOP OVERRIDE]** Rejected recommendation:\n*"${rejectedAction}"*\n\n**Operator Stated Reason:** ${reason}`,
+    triggerAgentSpawningSimulation(
+      `Run Agentic AI investigation for ${clusterLabel}`,
+      clusterId
+    );
+
+    return () => {
+      activeStreamCleanupRef.current?.();
+      setIsSimulating(false);
+      setLiveTriageState(INITIAL_LIVE_STATE);
     };
-    setMessages(prev => [...prev, userMsg]);
+  }, [selectedCluster?.cluster_id]);
 
-    // Step 1: Agent Re-planning Acknowledgment
-    const t1 = setTimeout(() => {
-      const replanAckMsg: ChatMessage = {
-        id: `replan-ack-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Operator Feedback Ingested: Re-planning Triggered**\n- Human constraint recorded: *"${reason}"*.\n- Coordinator updating topological graph & querying alternative MCP resolution pathways...`
-      };
-      setMessages(prev => [...prev, replanAckMsg]);
-
-      // Step 2: Dynamic Alternative Tool Query Animation
-      const t2 = setTimeout(() => {
-        const replanSpawnMsg: ChatMessage = {
-          id: `replan-spawn-${Date.now()}`,
-          sender: 'assistant',
-          timestamp: timeNow(),
-          isSpawningAnimation: true,
-          spawningProgress: {
-            stage: 3,
-            stageText: 'Agent 1 (Lane Investigator) exploring Lane 6 bypass & pressure purge cycles',
-            agentName: 'Agent 1: Lane & Actuator Investigator',
-            agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
-            cluster: 'Cluster A (Revision 2)',
-            toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
-          }
-        };
-        setMessages(prev => [...prev, replanSpawnMsg]);
-
-        // Step 3: Revised Docket Delivery (Rev. 2)
-        const t3 = setTimeout(() => {
-          const revisedDocket: DocketItem = {
-            id: 'DOCKET-A-REV2',
-            clusterId: 'Cluster A',
-            title: `${docketTitle} (REVISED PLAN - REV. 2)`,
-            severity: 'HIGH',
-            impact: 'Quay Crane QC-03 starvation mitigated via automated Lane 6 bypass.',
-            rootCause: 'Mechanical twistlock binding on lead AGV-104 isolated; alternate bypass enabled.',
-            physicalEvidence: [
-              { text: 'Lane 6 buffer verified clear (0 queued vehicles, 100% capacity available).', verified: true, timestamp: timeNow() },
-              { text: 'Automated hydraulic relief pulse sequence verified safe for remote triggering.', verified: true, timestamp: timeNow() }
-            ],
-            plcRegisters: [
-              { code: '0x7E1_PURGE', name: 'AUTO_RELIEF_PULSE_SEQ', description: 'Remote high-frequency solenoid oscillation', category: 'Actuator', status: 'READY_TO_EXECUTE' }
-            ],
-            recommendedActions: [
-              'Execute automated hydraulic back-pressure purge cycle (3x pulses @ 290 bar) on AGV-104.',
-              'Dynamic TOS reroute: Authorize AGV-109 and AGV-112 via Lane 6 bypass to Quay Crane QC-03 immediately.'
-            ]
-          };
-
-          const revisedDocketMsg: ChatMessage = {
-            id: `revised-docket-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            text: `**Revised Resolution Docket Synthesized (Rev. 2):**\nIncorporated your operational constraints. You can now authorize or adjust the alternative bypass actions below.`,
-            docket: revisedDocket
-          };
-          setMessages(prev => [...prev, revisedDocketMsg]);
-          isSimulatingRef.current = false;
-          setIsSimulating(false);
-        }, 1600);
-
-        timeoutsRef.current.push(t3);
-      }, 900);
-
-      timeoutsRef.current.push(t2);
-    }, 500);
-
-    timeoutsRef.current.push(t1);
-  };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -563,30 +549,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       [actionText]: { status: 'ACCEPTED' }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    const t = setTimeout(() => {
-      const confirmMsg: ChatMessage = {
-        id: `dispatch-confirm-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Operational Action Authorized & Dispatched**\n- **Command:** "${actionText}"\n- **Field Unit:** Tuas Sector A Operations Team #2\n- **Work Order Reference:** WO-88219 (Priority High)\n- **Status:** **DISPATCHED & EXECUTING (ETA: 3m 30s)**`
-      };
-      setMessages(prev => [...prev, confirmMsg]);
-    }, 400);
-
-    timeoutsRef.current.push(t);
   };
 
-  // Handle Reject Action -> Trigger Re-plan
-  const handleConfirmRejectAction = (actionText: string, docketTitle: string) => {
-    const reason = tempInput[actionText]?.trim() || 'Rejected by Terminal Supervisor';
+  // Handle Reject Action
+  const handleRejectAction = (actionText: string) => {
     setActionStates(prev => ({
       ...prev,
-      [actionText]: { status: 'REJECTED', reason }
+      [actionText]: { status: 'REJECTED' }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    triggerAgentReplanSimulation(actionText, reason, docketTitle);
   };
 
   // Handle Override Action
@@ -597,18 +568,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       [actionText]: { status: 'OVERRIDDEN', overrideText }
     }));
     setActiveFormMode(prev => ({ ...prev, [actionText]: null }));
-
-    const t = setTimeout(() => {
-      const overrideConfirmMsg: ChatMessage = {
-        id: `override-confirm-${Date.now()}`,
-        sender: 'assistant',
-        timestamp: timeNow(),
-        text: `**Manual Operator Override Dispatched**\n- **Original Plan:** "${actionText}"\n- **Supervisor Custom Directive:** *"${overrideText}"*\n- **Execution Channel:** Field Mobile Terminal & TOS Priority Queue\n- **Status:** **OVERRIDDEN COMMAND EXECUTED**`
-      };
-      setMessages(prev => [...prev, overrideConfirmMsg]);
-    }, 400);
-
-    timeoutsRef.current.push(t);
   };
 
   const handleResetAction = (actionText: string) => {
@@ -625,14 +584,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     activeStreamCleanupRef.current?.();
     activeStreamCleanupRef.current = null;
     isSimulatingRef.current = false;
-    hasAutoTriggeredRef.current = null;
     setIsSimulating(false);
+    setLiveTriageState(INITIAL_LIVE_STATE);
     setMessages([
       {
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: '**Welcome to PSA Incident Sherlock.**\n\nType any inquiry below (e.g. *"Investigate Lane 7 bottleneck"*, *"What caused the BCSS-02 trip?"*, or *"Simulate agent spawning"*) and press **Enter** to watch the multi-agent spawning and triage animation.',
+        text: '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
@@ -659,7 +618,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm font-bold text-slate-900 tracking-wide font-sans">
-                PSA INCIDENT SHERLOCK
+                PORT INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
                 RESPONSIBLE & TRANSPARENT AI
@@ -887,7 +846,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 font-mono">
                                   <span className="flex items-center gap-1.5">
                                     <Wrench className="w-3.5 h-3.5 text-sky-600" />
-                                    <span>HUMAN IN THE LOOP</span>
+                                    <span>SUGGESTED ACTIONS (HUMAN IN THE LOOP)</span>
                                   </span>
                                   <span className="text-[10px] text-slate-400 font-normal">Operator Action Required</span>
                                 </div>
@@ -911,13 +870,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           {/* Action Status Badges or Trigger Buttons */}
                                           {isAccepted && (
                                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
-                                              <Check className="w-3.5 h-3.5" /> Authorized & Dispatched
+                                              <Check className="w-3.5 h-3.5" /> Accepted
                                             </div>
                                           )}
 
                                           {isRejected && (
                                             <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg shrink-0">
-                                              <XCircle className="w-3.5 h-3.5" /> Rejected (Re-planning)
+                                              <XCircle className="w-3.5 h-3.5" /> Rejected
                                             </div>
                                           )}
 
@@ -928,148 +887,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                           )}
 
                                           {state.status === 'PENDING' && !mode && (
-                                            <div className="flex items-center space-x-1 shrink-0">
+                                            <div className="flex items-center space-x-1.5 shrink-0">
                                               <button
                                                 onClick={() => handleAuthorizeAction(action)}
                                                 className="px-2.5 py-1 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-all shadow-2xs active:scale-95 flex items-center gap-1 cursor-pointer"
                                               >
-                                                <ArrowRightCircle className="w-3 h-3" /> Authorize
+                                                <ArrowRightCircle className="w-3 h-3" /> Accept
                                               </button>
                                               <button
-                                                onClick={() => {
-                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'reject' }));
-                                                  setTempInput(prev => ({ ...prev, [action]: '' }));
-                                                }}
-                                                className="px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-all active:scale-95 cursor-pointer"
-                                                title="Reject recommendation and trigger re-plan"
+                                                onClick={() => handleRejectAction(action)}
+                                                className="px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-all active:scale-95 cursor-pointer"
+                                                title="Reject recommendation"
                                               >
                                                 Reject
-                                              </button>
-                                              <button
-                                                onClick={() => {
-                                                  setActiveFormMode(prev => ({ ...prev, [action]: 'override' }));
-                                                  setTempInput(prev => ({ ...prev, [action]: action }));
-                                                }}
-                                                className="px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 border border-amber-200 rounded-lg transition-all active:scale-95 cursor-pointer"
-                                                title="Manually edit directive"
-                                              >
-                                                Edit
                                               </button>
                                             </div>
                                           )}
                                         </div>
-
-                                        {/* Status Detail Sub-notes */}
-                                        {isRejected && state.reason && (
-                                          <p className="text-[11px] text-rose-600 italic pl-3">
-                                            Operator stated reason: "{state.reason}"
-                                          </p>
-                                        )}
-
-                                        {isOverridden && state.overrideText && (
-                                          <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200 pl-3 font-mono">
-                                            Directive: "{state.overrideText}"
-                                          </p>
-                                        )}
-
-                                        {/* Inline Rejection Form */}
-                                        {mode === 'reject' && (
-                                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
-                                            <div className="flex items-center justify-between font-bold text-rose-800">
-                                              <span className="flex items-center gap-1">
-                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                                                Select Reason to Trigger Agent Re-Plan
-                                              </span>
-                                              <button
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="text-slate-400 hover:text-slate-600"
-                                              >
-                                                <X className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-1">
-                                              {presetRejectionReasons.map((preset, pIdx) => (
-                                                <button
-                                                  key={pIdx}
-                                                  type="button"
-                                                  onClick={() => setTempInput(prev => ({ ...prev, [action]: preset }))}
-                                                  className="text-[10px] bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 px-2 py-0.5 rounded transition-colors"
-                                                >
-                                                  {preset}
-                                                </button>
-                                              ))}
-                                            </div>
-
-                                            <input
-                                              type="text"
-                                              value={tempInput[action] || ''}
-                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                              placeholder="Or type custom rejection reason..."
-                                              className="w-full bg-white border border-rose-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                                            />
-
-                                            <div className="flex items-center justify-end gap-1.5 pt-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                              >
-                                                Cancel
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleConfirmRejectAction(action, fMsg.docket?.title || 'Incident')}
-                                                className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
-                                              >
-                                                <X className="w-3.5 h-3.5" /> Reject & Re-Plan
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {/* Inline Override Form */}
-                                        {mode === 'override' && (
-                                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 animate-fadeIn font-mono text-xs">
-                                            <div className="flex items-center justify-between font-bold text-amber-900">
-                                              <span className="flex items-center gap-1">
-                                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                                                Edit Dispatch Directive
-                                              </span>
-                                              <button
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="text-slate-400 hover:text-slate-600"
-                                              >
-                                                <X className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
-
-                                            <textarea
-                                              rows={2}
-                                              value={tempInput[action] || ''}
-                                              onChange={(e) => setTempInput(prev => ({ ...prev, [action]: e.target.value }))}
-                                              placeholder="Enter modified operational dispatch instruction..."
-                                              className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
-                                            />
-
-                                            <div className="flex items-center justify-end gap-1.5 pt-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => setActiveFormMode(prev => ({ ...prev, [action]: null }))}
-                                                className="px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-200 rounded"
-                                              >
-                                                Cancel
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleConfirmOverrideAction(action)}
-                                                className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded shadow-sm flex items-center gap-1 cursor-pointer"
-                                              >
-                                                <Send className="w-3.5 h-3.5" /> Dispatch Override
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
                                     );
                                   })}
@@ -1092,24 +926,146 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         })}
 
         {isSimulating && (
-          <div className="bg-sky-50 border-2 border-sky-300 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5 animate-pulse font-mono text-xs text-sky-900 w-full">
-            <div className="p-2.5 bg-sky-100 border border-sky-300 rounded-xl text-sky-700 flex-shrink-0">
-              <Zap className="w-4 h-4 animate-spin" />
-            </div>
-            <div className="space-y-1 flex-1 min-w-0">
-              <div className="font-bold flex items-center justify-between flex-wrap gap-2">
-                <span className="flex items-center gap-1.5 text-xs text-sky-950">
-                  <Activity className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
-                  <span>Agentic Workflow In Progress (LangGraph & MCP)</span>
-                </span>
-                <span className="text-[10px] bg-sky-200/80 px-2 py-0.5 rounded text-sky-800 font-bold uppercase tracking-wider">
-                  LIVE STREAMING
-                </span>
+          <div className="bg-white border-2 border-sky-400/90 rounded-2xl p-4 md:p-5 shadow-lg space-y-4 font-mono text-xs w-full animate-fadeIn transition-all">
+            {/* Header with live pulse & agent name */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-sky-50 border border-sky-200 rounded-xl text-sky-600 animate-pulse flex-shrink-0">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-slate-900 font-sans text-sm">
+                      {liveTriageState.agentName || 'Agentic Workflow Orchestrator'}
+                    </span>
+                    <span className="text-[10px] bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                      LIVE MULTI-AGENT RUNTIME
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-sans">
+                    {liveTriageState.agentRole || 'Gathering telemetry, querying diagnostics tools, and formulating root cause'}
+                  </p>
+                </div>
               </div>
-              <p className="text-slate-600 text-[11px] font-sans">
-                Gathering telemetry, querying diagnostics tools, and formulating root cause...
-              </p>
+
+              <div className="flex items-center space-x-2 text-[11px] text-sky-700 bg-sky-50 border border-sky-200 px-3 py-1 rounded-lg">
+                <Zap className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                <span className="font-bold">{liveTriageState.phaseLabel}</span>
+              </div>
             </div>
+
+            {/* 4-Phase Stepper */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 font-sans text-[11px]">
+              {[
+                { step: 1, title: '1. Dynamic Routing' },
+                { step: 2, title: '2. MCP Diagnostics' },
+                { step: 3, title: '3. AI Reasoning' },
+                { step: 4, title: '4. Docket Synthesis' }
+              ].map((p) => {
+                const isDone = liveTriageState.currentPhase > p.step;
+                const isCurrent = liveTriageState.currentPhase === p.step;
+                return (
+                  <div
+                    key={p.step}
+                    className={`p-2 rounded-xl border flex items-center space-x-2 transition-all ${
+                      isDone
+                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 font-semibold'
+                        : isCurrent
+                        ? 'bg-sky-50 border-sky-300 text-sky-900 font-bold shadow-xs'
+                        : 'bg-slate-50 border-slate-200/70 text-slate-400'
+                    }`}
+                  >
+                    {isDone ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : isCurrent ? (
+                      <Zap className="w-3.5 h-3.5 text-sky-600 animate-pulse shrink-0" />
+                    ) : (
+                      <div className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />
+                    )}
+                    <span className="truncate">{p.title}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Live MCP Tool Invocations (Step 2) */}
+            {liveTriageState.toolCalls.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-sky-600" />
+                    <span>MCP Diagnostics ({liveTriageState.toolCalls.length})</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Live Telemetry & Sensor Queries</span>
+                </div>
+
+                <div 
+                  ref={toolsScrollRef}
+                  className="space-y-1.5 max-h-52 overflow-y-auto pr-1 scroll-smooth"
+                >
+                  {liveTriageState.toolCalls.map((tc) => (
+                    <div
+                      key={tc.id}
+                      className={`p-2.5 rounded-xl border transition-all text-xs ${
+                        tc.status === 'running'
+                          ? 'bg-amber-50/70 border-amber-300 text-amber-950 shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap pb-1">
+                        <span className="font-bold text-sky-900 flex items-center gap-1.5">
+                          <Wrench className="w-3 h-3 text-sky-600 shrink-0" />
+                          <span>{tc.tool}</span>
+                        </span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                            tc.status === 'running'
+                              ? 'bg-amber-100 text-amber-800 animate-pulse'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {tc.status === 'running' ? 'EXECUTING...' : 'COMPLETED'}
+                        </span>
+                      </div>
+
+                      {tc.input && Object.keys(tc.input).length > 0 && (
+                        <div className="text-[11px] text-slate-600 bg-white/80 p-1.5 rounded border border-slate-200/70 font-mono mt-1">
+                          <span className="text-slate-400">args: </span>
+                          {JSON.stringify(tc.input)}
+                        </div>
+                      )}
+
+                      {tc.output && (
+                        <div className="text-[11px] text-slate-700 bg-white/90 p-1.5 rounded border border-slate-200/80 font-mono mt-1 truncate">
+                          <span className="text-emerald-700 font-semibold">result: </span>
+                          {typeof tc.output === 'string' ? tc.output : JSON.stringify(tc.output)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Live Streamed AI Thoughts / Reasoning (Step 3) - Below MCP Diagnostics */}
+            {liveTriageState.streamedThought && (
+              <div className="bg-slate-900 text-slate-100 rounded-xl p-3.5 shadow-inner border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pb-1.5 border-b border-slate-800">
+                  <span className="flex items-center gap-1.5 font-bold text-sky-400">
+                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                    <span>AI Reasoning Stream</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">tokens streaming</span>
+                </div>
+                <div 
+                  ref={thoughtScrollRef}
+                  className="text-xs font-sans text-slate-200 leading-relaxed max-h-48 overflow-y-auto pr-1 scroll-smooth"
+                >
+                  <MarkdownRenderer content={liveTriageState.streamedThought} isUser={false} />
+                  <span className="inline-block w-1.5 h-3.5 bg-sky-400 animate-pulse ml-1 align-middle" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1140,25 +1096,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </button>
       </div>
 
-      {/* Message Input Box */}
-      <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-white">
-        <div className="flex items-center space-x-2 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-sky-500 focus-within:border-sky-500 shadow-inner">
+      {/* Message Input Box — disabled for this iteration, use the trigger chips above */}
+      <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-slate-50">
+        <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 opacity-60 cursor-not-allowed">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type any message (e.g. 'Investigate Lane 7' or 'Test agent spawning') and press Enter..."
-            className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans"
-            disabled={isSimulating}
+            placeholder="Chat with Sherlock - Coming Soon"
+            className="flex-1 bg-transparent text-xs text-slate-400 placeholder:text-slate-400 focus:outline-none font-sans cursor-not-allowed"
+            disabled
           />
           <button
             type="submit"
-            disabled={!inputValue.trim() || isSimulating}
-            className={`p-2 rounded-lg transition-all ${
-              inputValue.trim() && !isSimulating
-                ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
+            disabled
+            className="p-2 rounded-lg bg-slate-200 text-slate-400 cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
           </button>
