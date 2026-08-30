@@ -343,7 +343,6 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
           ) : (
             filteredClusters.map((cluster) => {
               const isExpanded = expandedClusterIds[cluster.cluster_id];
-              const isCritical = cluster.highestSeverity === 'CRITICAL';
               const isFocused = cluster.cluster_id === selectedClusterId;
 
               return (
@@ -352,9 +351,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                   className={`bg-white border-2 rounded-2xl p-5 md:p-6 shadow-md transition-all duration-200 hover:shadow-xl w-full space-y-4 ${
                     isFocused
                       ? 'ring-4 ring-sky-400 border-sky-500 shadow-xl'
-                      : isCritical 
-                      ? 'border-l-8 border-l-psa-flame border-t-slate-200 border-r-slate-200 border-b-slate-200' 
-                      : 'border-l-8 border-l-psa-navy border-t-slate-200 border-r-slate-200 border-b-slate-200'
+                      : 'border-slate-200'
                   }`}
                 >
                   {/* Single Expanded Row Layout */}
