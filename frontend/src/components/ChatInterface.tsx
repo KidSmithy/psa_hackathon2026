@@ -149,8 +149,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       sender: 'assistant',
       timestamp: timeNow(),
       text: selectedCluster
-        ? `**Welcome to PSA Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
-        : '**Welcome to PSA Incident Sherlock.**\n\nClick a quick scenario trigger above to start multi-agent triage.',
+        ? `**Welcome to Port Incident Sherlock.**\n\nTarget Incident: **${selectedCluster.cluster_id}: ${selectedCluster.name}** (${selectedCluster.primary_location}).`
+        : '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to start multi-agent triage.',
     }
   ]);
 
@@ -632,7 +632,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         id: 'msg-welcome',
         sender: 'assistant',
         timestamp: '20:45:00',
-        text: '**Welcome to PSA Incident Sherlock.**\n\nClick a quick scenario trigger above to watch the multi-agent spawning and triage animation.',
+        text: '**Welcome to Port Incident Sherlock.**\n\nClick a quick scenario trigger above to watch the multi-agent spawning and triage animation.',
       }
     ]);
     setActionStates({});
@@ -659,7 +659,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm font-bold text-slate-900 tracking-wide font-sans">
-                PSA INCIDENT SHERLOCK
+                PORT INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
                 RESPONSIBLE & TRANSPARENT AI
@@ -1147,13 +1147,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Free-text chat — Coming soon"
+            placeholder="Chat with Sherlock - Coming Soon"
             className="flex-1 bg-transparent text-xs text-slate-400 placeholder:text-slate-400 focus:outline-none font-sans cursor-not-allowed"
             disabled
           />
-          <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-slate-200 text-slate-500 px-2 py-1 rounded-lg whitespace-nowrap">
-            Coming Soon
-          </span>
           <button
             type="submit"
             disabled
