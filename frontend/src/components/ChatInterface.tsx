@@ -233,7 +233,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterId}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+      text: `**Coordinator Assessment Activated**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterId}** to the investigator assigned by its problem type.`
     };
 
     setMessages(prev => {
@@ -367,7 +367,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       id: `coord-${Date.now()}`,
       sender: 'assistant',
       timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterLabel}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
+      text: `**Coordinator Assessment Activated**\n- Running open clustering over live \`raw_alerts\` from Supabase.\n- Routing **${clusterLabel}** to the investigator assigned by its problem type.`
     };
 
     setMessages(prev => {
