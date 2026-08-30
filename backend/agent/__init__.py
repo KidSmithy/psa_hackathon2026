@@ -9,5 +9,7 @@ to load it separately.
 from pathlib import Path
 from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=ENV_PATH)
+for fname in [".env", "config.env", ".env.production"]:
+    env_file = Path(__file__).resolve().parent.parent / fname
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file)

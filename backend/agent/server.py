@@ -28,6 +28,13 @@ from typing import Any, AsyncIterator, Optional
 import os
 import re
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+for fname in [".env", "config.env", ".env.production"]:
+    env_file = Path(__file__).resolve().parent.parent / fname
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +44,7 @@ from pydantic import BaseModel, Field
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
+from agent.stage1_bridge import get_incident_clusters
 
 # Force immediate unbuffered flushing to terminal
 if hasattr(sys.stdout, "reconfigure"):
@@ -52,7 +60,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("psa_agent.server")
 
-FRONTEND_ORIGINS = [
+DEFAULT_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:5173",
@@ -60,6 +68,8 @@ FRONTEND_ORIGINS = [
     "http://127.0.0.1:3001",
     "http://127.0.0.1:5173",
 ]
+custom_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+FRONTEND_ORIGINS = DEFAULT_ORIGINS + [o.strip() for o in custom_origins_env.split(",") if o.strip()]
 
 
 @asynccontextmanager
@@ -80,13 +90,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PSA Incident Triage Agent API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=FRONTEND_ORIGINS,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if "*" in FRONTEND_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=FRONTEND_ORIGINS,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 class InvestigateRequest(BaseModel):

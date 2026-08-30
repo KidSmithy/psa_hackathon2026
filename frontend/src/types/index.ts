@@ -8,6 +8,9 @@ export interface RawAlert {
   location?: string;
   severity: SeverityLevel;
   message: string;
+  video_id?: string | null;
+  video_filename?: string | null;
+  video_url?: string | null;
   isFilteredNoise?: boolean;
 }
 

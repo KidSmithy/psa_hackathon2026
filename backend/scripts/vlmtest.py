@@ -6,7 +6,7 @@ from google import genai
 client = genai.Client()
 
 # 1. Upload video using the Files API
-video_file = client.files.upload(file="C:/Users/Rald999/Documents/GitHub/psa_hackathon2026/backend/video/elec.mp4")
+video_file = client.files.upload(file="C:/Users/Rald999/Documents/GitHub/psa_hackathon2026/backend/video/lane_block_byobject.mp4")
 
 # 2. Wait for processing to complete if large
 while video_file.state.name == "PROCESSING":

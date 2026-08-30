@@ -32,6 +32,7 @@ Stores real-time alerts emitted by terminal IoT sensors, AGVs, charging stations
 | `location` | `TEXT` | `NOT NULL` | Physical terminal location or sector (e.g., `Lane_7`, `Station_BCSS_02`, `Sector_A`) |
 | `severity` | `TEXT` | `NOT NULL` | Severity level (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`) |
 | `message` | `TEXT` | `NOT NULL` | Human-readable alert summary |
+| `video_id` | `UUID` | `NULLABLE`, `FK -> videos(id)` | Associated CCTV / dashcam video evidence record |
 
 ---
 

@@ -39,28 +39,35 @@ export function streamInvestigation(
   const params = clusterId ? `?cluster_id=${encodeURIComponent(clusterId)}` : '';
   const url = `${API_BASE_URL}/api/investigate/stream${params}`;
   console.log(`📡 [streamInvestigation] Connecting to: ${url}`);
+  let isClosed = false;
   const source = new EventSource(url);
 
   source.onopen = () => {
+    if (isClosed) return;
     console.log(`✅ [streamInvestigation] Connection opened to: ${url}`);
   };
 
   source.onmessage = (e) => {
+    if (isClosed) return;
     console.log(`📥 [streamInvestigation] Received event:`, e.data);
     const parsed: StreamEvent = JSON.parse(e.data);
     onEvent(parsed);
     if (parsed.node === 'complete') {
+      isClosed = true;
       source.close();
     }
   };
   source.onerror = (err) => {
+    if (isClosed) return;
     console.error(`❌ [streamInvestigation] EventSource error on: ${url}`, err);
     onError(err);
+    isClosed = true;
     source.close();
   };
 
   return () => {
     console.log(`🔌 [streamInvestigation] Closing connection to: ${url}`);
+    isClosed = true;
     source.close();
   };
 }

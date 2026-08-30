@@ -227,139 +227,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
-  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
-  useEffect(() => {
-    if (!selectedCluster?.cluster_id) return;
-
-    let isSubscribed = true;
-    const clusterId = selectedCluster.cluster_id;
-    const clusterName = selectedCluster.name;
-    const clusterLabel = `${clusterId}: ${clusterName}`;
-
-    console.log('[ChatInterface] Triggering triage for:', clusterId);
-    setIsSimulating(true);
-
-    const userMsgText = `Run AI incident triage & spawn investigator agents for ${clusterLabel}`;
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      sender: 'user',
-      timestamp: timeNow(),
-      text: userMsgText,
-    };
-
-    const coordMsg: ChatMessage = {
-      id: `coord-${Date.now()}`,
-      sender: 'assistant',
-      timestamp: timeNow(),
-      text: `**Coordinator Assessment Activated**\n- Reading live \`incident_clusters\` from Supabase.\n- Routing **${clusterId}** to the investigator(s) assigned in the real \`assigned_agent\` column.`
-    };
-
-    setMessages(prev => {
-      if (prev.some(m => m.text === userMsgText)) return prev;
-      return [...prev, userMsg, coordMsg];
-    });
-
-    const cleanup = streamInvestigation(
-      clusterId,
-      (event: StreamEvent) => {
-        if (!isSubscribed) return;
-        if (event.node === 'started') return;
-
-        if (event.node === 'error') {
-          setMessages(prev => [...prev, {
-            id: `stream-error-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
-          }]);
-          setIsSimulating(false);
-          return;
-        }
-
-        if (event.node === 'complete') {
-          const result: InvestigateResult = event.output;
-          if (result.dockets.length === 0) {
-            setMessages(prev => [...prev, {
-              id: `docket-empty-${Date.now()}`,
-              sender: 'assistant',
-              timestamp: timeNow(),
-              text: `Investigation finished but produced no docket — check that ${clusterId} still exists in incident_clusters.`,
-            }]);
-          } else {
-            result.dockets.forEach((docket, i) => {
-              setMessages(prev => [...prev, {
-                id: `docket-${Date.now()}-${i}`,
-                sender: 'assistant',
-                timestamp: timeNow(),
-                text: `**Investigation complete:** synthesized into a Human Review Docket.`,
-                docket: sanitizeDocket(docket),
-              }]);
-            });
-          }
-          setIsSimulating(false);
-          return;
-        }
-
-        if (event.node.endsWith('_investigator') || event.node === 'investigator') {
-          const finding = event.output.investigator_findings?.[0];
-          if (!finding) return;
-          const agentLabel = stripEmojis(finding.assigned_agent || (event.node === 'investigator' ? 'Domain Investigator' : event.node));
-          const rootCauseClean = stripEmojis(finding.root_cause || '');
-          const roleClean = stripEmojis(finding.title || '');
-          const evidenceClean = ((finding.evidence_items as string[]) || []).map(e => stripEmojis(e));
-
-          setMessages(prev => [...prev, {
-            id: `spawn-${event.node}-${finding.incident_id}-${Date.now()}`,
-            sender: 'assistant',
-            timestamp: timeNow(),
-            isSpawningAnimation: true,
-            spawningProgress: {
-              stage: 2,
-              stageText: `${agentLabel} finished investigating ${stripEmojis(finding.cluster_name)} (${finding.incident_id})`,
-              agentName: agentLabel,
-              agentRole: roleClean,
-              cluster: finding.incident_id,
-              tokensUsed: 100,
-              maxTokens: 100,
-              activeTool: 'domain-scoped MCP tools (telemetry + diagnostics)',
-              logs: [
-                `Root cause: ${rootCauseClean}`,
-                ...evidenceClean,
-              ],
-            },
-          }]);
-        } else if (event.node === 'correlation') {
-          const groups = event.output.correlation?.linked_groups || [];
-          if (groups.length > 0) {
-            setMessages(prev => [...prev, {
-              id: `corr-${Date.now()}`,
-              sender: 'assistant',
-              timestamp: timeNow(),
-              text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
-            }]);
-          }
-        }
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        console.error('SSE Stream error:', err);
-        setMessages(prev => [...prev, {
-          id: `stream-err-${Date.now()}`,
-          sender: 'assistant',
-          timestamp: timeNow(),
-          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
-        }]);
-        setIsSimulating(false);
-      }
-    );
-
-    return () => {
-      isSubscribed = false;
-      cleanup();
-      setIsSimulating(false);
-    };
-  }, [selectedCluster?.cluster_id]);
-
   /**
    * Runs a manual investigation query (e.g. from user text input or quick scenario trigger buttons).
    */
@@ -408,7 +275,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             id: `stream-error-${Date.now()}`,
             sender: 'assistant',
             timestamp: timeNow(),
-            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the \`uvicorn agent.server:app\` terminal for the full traceback.`,
+            text: `**Investigation failed on the backend:**\n\`${event.output?.message || 'Unknown error'}\`\n\nCheck the backend logs for details.`,
           }]);
           finish();
           return;
@@ -484,12 +351,31 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           id: `stream-err-${Date.now()}`,
           sender: 'assistant',
           timestamp: timeNow(),
-          text: `**Stream connection to backend failed.**\nEnsure \`uvicorn agent.server:app --port 8000\` is running.`,
+          text: `**Stream connection to backend failed.**\nEnsure the backend server is reachable at \`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}\`.`,
         }]);
         finish();
       }
     );
   };
+
+  // Auto-trigger on mount or when selectedCluster changes (Strict-mode safe)
+  useEffect(() => {
+    if (!selectedCluster?.cluster_id) return;
+    const clusterId = selectedCluster.cluster_id;
+    const clusterName = selectedCluster.name;
+    const clusterLabel = `${clusterId}: ${clusterName}`;
+
+    triggerAgentSpawningSimulation(
+      `Run AI incident triage & spawn investigator agents for ${clusterLabel}`,
+      clusterId
+    );
+
+    return () => {
+      activeStreamCleanupRef.current?.();
+      setIsSimulating(false);
+    };
+  }, [selectedCluster?.cluster_id]);
+
 
   // -------------------------------------------------------------
   // Simulated Agent Re-Plan Flow upon Operator Rejection
