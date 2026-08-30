@@ -96,6 +96,18 @@ The full pipeline, top to bottom: `raw_alerts` feeds Stage 1's open clustering, 
 
 ---
 
+## Responsible & Transparent AI
+
+Sherlock AI does not act as a black box. Every step an agent takes is shown, not just the final answer, so a controller can see how a conclusion was reached rather than being asked to simply trust it.
+
+![View Real Time - Agent Reasoning](gallery/View%20Real%20Time%20-%20Agent%20Reasoning%20.png)
+
+The live investigation view streams each agent's reasoning and every MCP tool call as it happens, and the "View Investigation Steps" trajectory keeps a full record afterward, from video analysis through to correlation.
+
+A human is always in the loop. Every recommendation lands in a docket with its supporting evidence, and no action is ever executed on Sherlock AI's word alone. The controller reviews the evidence and either accepts or rejects the suggested action.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
