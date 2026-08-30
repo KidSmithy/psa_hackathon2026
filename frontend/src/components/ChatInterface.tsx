@@ -161,6 +161,8 @@ const isTrajectoryMessage = (msg: ChatMessage): boolean => {
     msg.text.includes('Assigning Investigator Agent') ||
     msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
     msg.text.includes('Correlation agent:') ||
+    msg.text.includes('CCTV Video Analyst:') ||
+    msg.text.includes('Triage Orchestrator:') ||
     msg.text.includes('Dynamic Alternative Tool Query')
   )) {
     return true;
@@ -479,6 +481,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 sender: 'assistant',
                 timestamp: timeNow(),
                 text: `**Correlation agent:** found ${groups.length} linked incident group(s) — ${groups.map((g: any) => stripEmojis(g.reason)).join('; ')}`,
+              }]);
+            }
+          } else if (nodeName === 'video_analysis') {
+            const videoFindings: Record<string, any[]> = event.output?.video_findings || {};
+            const incidentIds = Object.keys(videoFindings);
+            if (incidentIds.length > 0) {
+              const lines = incidentIds.flatMap((incidentId) =>
+                (videoFindings[incidentId] || []).map((clip: any) =>
+                  `- **${incidentId}**: ${clip.assessment || 'UNKNOWN'} (${clip.severity || 'NONE'}) — ${stripEmojis(clip.summary || '')}`
+                )
+              );
+              setMessages(prev => [...prev, {
+                id: `video-${Date.now()}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: `**CCTV Video Analyst:** reviewed footage for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
+              }]);
+            }
+          } else if (nodeName === 'orchestrator') {
+            const orchestration: Record<string, any> = event.output?.orchestration || {};
+            const incidentIds = Object.keys(orchestration);
+            if (incidentIds.length > 0) {
+              const lines = incidentIds.map((incidentId) => {
+                const o = orchestration[incidentId];
+                const domains = (o.domains || []).join(' + ') || 'general_investigator';
+                const videoNote = o.had_video ? ' (video-informed)' : '';
+                return `- **${incidentId}** → ${domains}${videoNote}: ${stripEmojis(o.rationale || '')}`;
+              });
+              setMessages(prev => [...prev, {
+                id: `orch-${Date.now()}`,
+                sender: 'assistant',
+                timestamp: timeNow(),
+                text: `**Triage Orchestrator:** assigned investigator(s) for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
               }]);
             }
           }
