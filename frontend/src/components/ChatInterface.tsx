@@ -71,13 +71,13 @@ const NODE_METADATA: Record<string, { name: string; role: string; phase: number;
     phaseLabel: '1. Routing & Context Assignment',
   },
   video_analysis: {
-    name: 'CCTV Video Analyst',
+    name: 'CCTV Video Analyst Agent',
     role: 'Gemini Vision — Independent Footage Assessment',
     phase: 1,
     phaseLabel: '1. CCTV Footage Analysis',
   },
   orchestrator: {
-    name: 'Triage Orchestrator',
+    name: 'Orchestrator Agent',
     role: 'Investigator Selection from Cause, Telemetry & Footage',
     phase: 1,
     phaseLabel: '1. Orchestrator Agent Assignment',
@@ -160,8 +160,8 @@ const isTrajectoryMessage = (msg: ChatMessage): boolean => {
   if (msg.text && (
     msg.text.includes('Operator Feedback Ingested: Re-planning Triggered') ||
     msg.text.includes('Correlation agent:') ||
-    msg.text.includes('CCTV Video Analyst:') ||
-    msg.text.includes('Triage Orchestrator:') ||
+    msg.text.includes('CCTV Video Analyst Agent:') ||
+    msg.text.includes('Orchestrator Agent:') ||
     msg.text.includes('Dynamic Alternative Tool Query')
   )) {
     return true;
@@ -488,7 +488,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `video-${Date.now()}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `**CCTV Video Analyst:** reviewed footage for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
+                text: `**CCTV Video Analyst Agent:** reviewed footage for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
               }]);
             }
           } else if (nodeName === 'orchestrator') {
@@ -505,7 +505,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 id: `orch-${Date.now()}`,
                 sender: 'assistant',
                 timestamp: timeNow(),
-                text: `**Triage Orchestrator:** assigned investigator(s) for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
+                text: `**Orchestrator Agent:** assigned sub-agents (investigators) for ${incidentIds.length} incident(s)\n${lines.join('\n')}`,
               }]);
             }
           }

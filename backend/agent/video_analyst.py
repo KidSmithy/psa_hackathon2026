@@ -202,7 +202,6 @@ async def analyse_footage(footage: Footage, location: str) -> Optional[dict[str,
         return None
 
     finding["video_id"] = footage.video_id
-    finding["camera_id"] = footage.camera_id
     finding["uri"] = footage.uri
     finding["model"] = GEMINI_MODEL
     logger.info(
