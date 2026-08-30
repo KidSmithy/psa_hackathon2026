@@ -662,7 +662,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 PSA INCIDENT SHERLOCK
               </h2>
               <span className="bg-sky-100 text-sky-700 border border-sky-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold whitespace-nowrap">
-                RESPONSIBLE AI
+                RESPONSIBLE & TRANSPARENT AI
               </span>
             </div>
           </div>
