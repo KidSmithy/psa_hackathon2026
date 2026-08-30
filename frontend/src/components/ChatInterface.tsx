@@ -57,8 +57,8 @@ export interface LiveTriageState {
 
 const INITIAL_LIVE_STATE: LiveTriageState = {
   activeNode: 'coordinator',
-  agentName: 'System Coordinator',
-  agentRole: 'Dynamic Incident Fan-Out & Routing',
+  agentName: 'Sherlock AI',
+  agentRole: 'Starting investigation pipeline...',
   currentPhase: 0,
   phaseLabel: 'Initializing',
   streamedThought: '',
@@ -67,8 +67,8 @@ const INITIAL_LIVE_STATE: LiveTriageState = {
 
 const NODE_METADATA: Record<string, { name: string; role: string; phase: number; phaseLabel: string }> = {
   coordinator: {
-    name: 'System Coordinator',
-    role: 'Dynamic Incident Fan-Out & Routing',
+    name: 'Sherlock AI',
+    role: 'Starting investigation pipeline...',
     phase: 0,
     phaseLabel: 'Initializing',
   },
@@ -388,8 +388,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           setLiveTriageState(prev => ({
             ...prev,
             streamedThought: prev.streamedThought + event.chunk,
-            currentPhase: Math.max(prev.currentPhase, 3),
-            phaseLabel: '3. AI Reasoning & Hypothesis Formulation',
+            phaseLabel: `${prev.currentPhase}. AI Reasoning & Hypothesis Formulation`,
           }));
           return;
         }
@@ -405,8 +404,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           };
           setLiveTriageState(prev => ({
             ...prev,
-            currentPhase: Math.max(prev.currentPhase, 2),
-            phaseLabel: `2. Executing MCP Tool: ${event.tool}`,
+            phaseLabel: `${prev.currentPhase}. Executing MCP Tool: ${event.tool}`,
             toolCalls: [...prev.toolCalls, newToolCall],
           }));
           return;
@@ -1128,13 +1126,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
             </div>
 
-            {/* 4-Phase Stepper */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 font-sans text-[11px]">
+            {/* 6-Phase Stepper */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pt-1 font-sans text-[11px]">
               {[
-                { step: 1, title: '1. Dynamic Routing' },
-                { step: 2, title: '2. MCP Diagnostics' },
-                { step: 3, title: '3. AI Reasoning' },
-                { step: 4, title: '4. Docket Synthesis' }
+                { step: 1, title: '1. CCTV Footage Analysis' },
+                { step: 2, title: '2. Orchestrator Assignment' },
+                { step: 3, title: '3. MCP Diagnostics' },
+                { step: 4, title: '4. Reconciling Findings' },
+                { step: 5, title: '5. Cross-Incident Correlation' },
+                { step: 6, title: '6. Docket Synthesis' }
               ].map((p) => {
                 const isDone = liveTriageState.currentPhase > p.step;
                 const isCurrent = liveTriageState.currentPhase === p.step;
@@ -1162,7 +1162,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               })}
             </div>
 
-            {/* Live MCP Tool Invocations (Step 2) */}
+            {/* Live MCP Tool Invocations (Step 3) */}
             {liveTriageState.toolCalls.length > 0 && (
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
