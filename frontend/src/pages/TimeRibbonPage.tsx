@@ -233,7 +233,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
               <div className="py-8 text-center text-slate-500 font-mono space-y-1">
                 <Clock className="w-6 h-6 text-slate-400 mx-auto animate-pulse" />
                 <p className="font-bold text-psa-navy-dark">Click any incident lane or bracket capsule to inspect details.</p>
-                <p className="text-xs text-slate-400">Scrubber automatically snaps to clicked alert timestamps.</p>
+                <p className="text-xs text-slate-400">Timestamp automatically snaps to clicked alert timestamps.</p>
               </div>
             )}
           </div>

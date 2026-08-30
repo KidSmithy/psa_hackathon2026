@@ -257,7 +257,7 @@ export const IncidentTimeRibbon: React.FC<IncidentTimeRibbonProps> = ({
         </div>
 
         <div className="flex items-center space-x-3 bg-black/40 px-3 py-1.5 rounded-xl border border-slate-700">
-          <span className="text-slate-400 text-[10px] uppercase font-bold">Scrubber:</span>
+          <span className="text-slate-400 text-[10px] uppercase font-bold">Timestamp:</span>
           <span className="text-tuas-cyan font-mono font-black text-sm">{formatClock(currentTimeSec)}</span>
           <span className="text-slate-500 text-[10px]">
             (+{Math.max(0, Math.round(currentTimeSec - minTimeSec))}s)

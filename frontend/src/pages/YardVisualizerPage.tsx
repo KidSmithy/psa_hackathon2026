@@ -117,7 +117,7 @@ export const YardVisualizerPage: React.FC<YardVisualizerPageProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-white font-sans">
-              PAGE 1: AGV YARD MAP VISUALIZER & KINEMATICS
+              PAGE 1: REAL-TIME AGV YARD MAP VISUALIZER
             </h2>
             <p className="text-slate-300 text-xs font-mono">
               Live spatial coordinates (850m × 480m), kinematic vectors, and synchronized fleet telemetry
