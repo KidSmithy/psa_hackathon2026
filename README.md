@@ -17,7 +17,7 @@
 
 ## What is Sherlock AI?
 
-Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operations. It clusters raw AGV sensor alerts into incidents, reviews any CCTV footage attached to those incidents, and lets an orchestrator agent decide which specialist investigator agent should examine each one. It then correlates root causes across related incidents and hands every finding to a human, who accepts or rejects the recommended action.
+Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operations. It clusters raw AGV sensor alerts into incidents, reviews any CCTV footage attached to those incidents, and lets an orchestrator agent decide which specialist investigator agent(s) should examine each one. It then correlates root causes across related incidents and hands every finding to a human, who accepts or rejects the recommended action.
 
 ---
 
