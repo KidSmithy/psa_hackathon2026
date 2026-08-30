@@ -6,9 +6,8 @@ import {
   Search, 
   Filter, 
   ArrowRight, 
-  MapPin, 
-  Bot, 
-  Zap, 
+  MapPin,
+  Zap,
   Radio, 
   RefreshCw, 
   FileText, 
@@ -380,11 +379,6 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
                       </h3>
 
                       <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-                        <span className="flex items-center gap-1.5 text-psa-navy-dark bg-tuas-teal/20 px-2.5 py-1 rounded-lg border border-tuas-teal-border whitespace-nowrap flex-shrink-0 font-bold">
-                          <Bot className="w-3.5 h-3.5 text-tuas-teal-dark" />
-                          <span>{cluster.assigned_agent}</span>
-                        </span>
-                        <span className="text-slate-300">•</span>
                         <span className="whitespace-nowrap text-slate-600 font-bold flex-shrink-0">
                           {cluster.alerts.length} correlated alerts
                         </span>

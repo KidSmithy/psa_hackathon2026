@@ -186,7 +186,7 @@ export const TimeRibbonPage: React.FC<TimeRibbonPageProps> = ({
                   <div>
                     <h3 className="text-base font-bold text-psa-navy-dark font-sans">{selectedCluster.name}</h3>
                     <p className="text-slate-500 text-xs">
-                      Primary Sector: <strong className="text-psa-navy">{selectedCluster.primary_location}</strong> • Agent: <strong className="text-tuas-teal-dark">{selectedCluster.assigned_agent}</strong>
+                      Primary Sector: <strong className="text-psa-navy">{selectedCluster.primary_location}</strong>
                       {selectedCluster.problem_type && (
                         <> • Problem: <strong className="text-psa-navy">{selectedCluster.problem_type_label || selectedCluster.problem_type}</strong></>
                       )}
