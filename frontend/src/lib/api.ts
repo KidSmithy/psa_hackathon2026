@@ -22,8 +22,14 @@ export async function investigate(clusterId?: string | null): Promise<Investigat
 }
 
 export interface StreamEvent {
-  node: string; // e.g. 'lane_investigator', 'correlation', 'submit_docket', or 'complete'
-  output: any;
+  type?: 'node_status' | 'thought' | 'tool_start' | 'tool_end' | 'node_output' | 'error' | 'complete';
+  node?: string; // e.g. 'lane_investigator', 'correlation', 'submit_docket', or 'complete'
+  status?: string;
+  chunk?: string;
+  tool?: string;
+  input?: any;
+  output?: any;
+  timestamp?: string;
 }
 
 /**
