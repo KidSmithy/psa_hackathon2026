@@ -77,7 +77,22 @@ Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operation
 
 ![System Architecture Diagram](gallery/System%20Architecture%20Diagram.png)
 
-The full pipeline, left to right: `raw_alerts` feeds Stage 1's open clustering, which produces incidents for the Video Analyst Agent to review. The Orchestrator Agent then assigns one to three specialist investigator agents in parallel. Their findings are merged by the Aggregator, linked to related incidents by the Correlation Agent, and finally handed to a human to accept or reject.
+The full pipeline, top to bottom: `raw_alerts` feeds Stage 1's open clustering, which produces incidents for the Video Analyst Agent to review. The Orchestrator Agent then assigns one to three specialist investigator agents in parallel. Their findings are merged by the Aggregator, linked to related incidents by the Correlation Agent, and finally handed to a human to accept or reject.
+
+---
+
+## Tech Stack Used
+
+| Category | Technology | Purpose |
+|---|---|---|
+| Orchestration | LangGraph | Orchestrator-worker `StateGraph`; `Send()` fans out one call per (incident, investigator) assignment. |
+| Agent Tools | Model Context Protocol (MCP) | Unified MCP server exposing 9 read/write tools, each gated by an RBAC role check. |
+| Reasoning | OpenAI (gpt-5.6-terra) | Drives the orchestrator, all 4 investigator agents, the aggregator, and the correlation agent. |
+| Vision | Gemini | Independent CCTV read before routing, told only the incident's location and nothing else. |
+| Data | Supabase | `raw_alerts`, telemetry, `videos`, and `incident_clusters_v2`, backed by live Postgres and object storage. |
+| API / Streaming | FastAPI + Server-Sent Events | Streams every node's progress live to the frontend as the investigation runs. |
+| Frontend | React + TypeScript | Live investigation view, incident queue, time ribbon, and the human accept/reject docket UI. |
+| Observability | Langfuse | Every node, video analysis, orchestrator, each investigator, aggregator, correlation, traced separately. |
 
 ---
 
