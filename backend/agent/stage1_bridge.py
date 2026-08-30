@@ -46,6 +46,14 @@ def get_incident_clusters() -> dict[str, dict[str, Any]]:
     client = get_supabase_client()
     response = client.table("incident_clusters").select("*").execute()
 
+    # Query raw_alerts to map video_id links
+    try:
+        raw_alerts_res = client.table("raw_alerts").select("id, video_id").execute()
+        raw_alerts_by_id = {str(a["id"]): a for a in (raw_alerts_res.data or []) if a.get("id")}
+    except Exception as exc:
+        logger.debug("Failed to query raw_alerts for video links: %s", exc)
+        raw_alerts_by_id = {}
+
     clusters: dict[str, dict[str, Any]] = {}
     for row in response.data:
         raw_alert_ids = row.get("raw_alert_ids", [])
@@ -55,6 +63,12 @@ def get_incident_clusters() -> dict[str, dict[str, Any]]:
         if isinstance(raw_alert_ids, str):
             raw_alert_ids = json.loads(raw_alert_ids)
 
+        video_links: dict[str, list[str]] = {}
+        for aid in raw_alert_ids:
+            alert = raw_alerts_by_id.get(str(aid))
+            if alert and alert.get("video_id"):
+                video_links.setdefault(str(alert["video_id"]), []).append(str(aid))
+
         assigned_agent = row["assigned_agent"]
         clusters[row["cluster_id"]] = {
             "cluster_name": row["name"],
@@ -62,6 +76,7 @@ def get_incident_clusters() -> dict[str, dict[str, Any]]:
             "assigned_agent": assigned_agent,
             "matched_alerts": raw_alert_ids,
             "domain": AGENT_TO_INVESTIGATOR_NODE.get(assigned_agent, DEFAULT_INVESTIGATOR_NODE),
+            "video_links": video_links,
         }
     return clusters
 

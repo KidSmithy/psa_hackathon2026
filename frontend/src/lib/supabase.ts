@@ -21,4 +21,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * type, priority score and clustering metadata.
  */
 export const CLUSTERS_TABLE =
-  import.meta.env.VITE_CLUSTERS_TABLE || 'incident_clusters';
+  import.meta.env.VITE_CLUSTERS_TABLE || 'incident_clusters_v2';

@@ -31,7 +31,7 @@ from agent.cctv import Footage
 
 logger = logging.getLogger("psa_agent.video")
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 UPLOAD_TIMEOUT_S = float(os.getenv("VIDEO_UPLOAD_TIMEOUT_S", "120"))
 
 # The JSON the orchestrator expects back. Stated in the prompt AND enforced by
@@ -59,7 +59,12 @@ RESPONSE_SCHEMA: dict[str, Any] = {
     "properties": {
         "assessment": {
             "type": "string",
-            "enum": ["CONFIRMED_INCIDENT", "POTENTIAL_HAZARD", "NORMAL_ACTIVITY", "UNUSABLE_FOOTAGE"],
+            "enum": [
+                "CONFIRMED_INCIDENT",
+                "POTENTIAL_HAZARD",
+                "NORMAL_ACTIVITY",
+                "UNUSABLE_FOOTAGE",
+            ],
         },
         "severity": {
             "type": "string",
@@ -74,44 +79,48 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "timestamp": {"type": "string"},
                     "what_happens": {"type": "string"},
-                    "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
-                    "entities": {"type": "array", "items": {"type": "string"}},
+                    "severity": {
+                        "type": "string",
+                        "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+                    },
+                    "entities": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["timestamp", "what_happens", "severity"],
             },
         },
-        "entities_involved": {"type": "array", "items": {"type": "string"}},
-        "visual_cues": {"type": "array", "items": {"type": "string"}},
+        "entities_involved": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "visual_cues": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
     },
-    "required": ["assessment", "severity", "confidence", "summary", "observations"],
+    "required": ["assessment", "severity", "confidence", "summary"],
 }
 
 
 def build_prompt(location: str) -> str:
-    return f"""You are the Video Analyst in an automated container terminal's incident triage
-system. You are watching CCTV footage from {location}.
+    return f"""You are a port operations CCTV video analyst for the Port of Singapore Authority (PSA).
+You are inspecting camera footage for the following yard location: {location}
 
-Analyse the footage for accidents, anomalies, safety hazards, or unusual behaviour:
+Your job is an INDEPENDENT visual assessment of what this footage shows. You do not know
+what telemetry was recorded or what fault codes were raised — report only what is visible.
 
-1. Incident / anomaly detection — collisions, near-misses, falls, equipment
-   malfunctions, structural issues, obstructions, or irregular behaviour. If
-   something simply looks off or out of place, describe what seems abnormal and
-   why.
-2. Timeline — for each event, the timestamp range, what happens, how severe it
-   is, and which entities are involved.
-3. Overall assessment — is this a confirmed incident, a potential hazard, or
-   entirely normal activity?
+Analyze the entire clip carefully and return a JSON object matching this schema exactly:
+{VIDEO_FINDING_CONTRACT}
 
-Report only what is visible in the footage. You have not been told what fault
-was reported, and you should not guess at one: describing "a vehicle stopped
-mid-lane with its spreader raised" is useful, asserting "a twistlock actuator
-failed" is not, because you cannot see that. If the footage is too dark,
-obstructed or short to judge, say so with assessment "UNUSABLE_FOOTAGE" rather
-than inventing an event.
-
-Respond with JSON in exactly this shape, and nothing else:
-
-{VIDEO_FINDING_CONTRACT}"""
+Important:
+- Set assessment to CONFIRMED_INCIDENT if you see equipment stoppage, physical collisions, unseated loads, or safety breaches.
+- Set assessment to POTENTIAL_HAZARD if you see near-misses, obstacles in lane, or unusual movement without stoppage.
+- Set assessment to NORMAL_ACTIVITY if yard traffic and operations proceed smoothly with no abnormalities.
+- Set assessment to UNUSABLE_FOOTAGE only if the feed is black, severely corrupted, or pointing away from operations.
+- Ensure confidence is a float between 0.0 and 1.0.
+"""
 
 
 # Gemini's Files API charges an upload per call; the same clip is reused across
@@ -122,21 +131,25 @@ _upload_cache: dict[str, Any] = {}
 
 
 def _resolve_to_local_path(footage: Footage) -> Optional[str]:
-    """Local file for the clip, downloading a remote uri to a temp file first."""
-    local = footage.local_path()
-    if local is not None:
-        return str(local)
+    """
+    Returns a local file path for Gemini file upload:
+      1. Local backend/video/{filename} if it exists.
+      2. Downloads public_url to a tempfile if remote.
+    """
+    if footage.filename:
+        from agent.cctv import CCTV_ROOT
+        local_candidate = CCTV_ROOT / footage.filename
+        if local_candidate.exists() and local_candidate.is_file():
+            return str(local_candidate)
 
-    if not footage.is_remote:
-        logger.warning("CCTV clip %s not found at %s", footage.video_id, footage.uri)
-        return None
+    if os.path.exists(footage.uri):
+        return footage.uri
 
     try:
-        suffix = os.path.splitext(footage.uri)[1] or ".mp4"
-        with urlopen(footage.uri, timeout=UPLOAD_TIMEOUT_S) as response:  # noqa: S310
-            handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-            with handle:
-                handle.write(response.read())
+        with urlopen(footage.uri, timeout=30) as resp:
+            handle = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+            handle.write(resp.read())
+            handle.flush()
             return handle.name
     except Exception as exc:
         logger.warning("Could not download CCTV clip %s: %s", footage.uri, exc)
@@ -172,15 +185,25 @@ def _analyse_sync(footage: Footage, location: str) -> Optional[dict[str, Any]]:
             return None
         _upload_cache[footage.uri] = handle
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[handle, build_prompt(location)],
-        config=genai_types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=RESPONSE_SCHEMA,
-        ),
-    )
-    return json.loads(response.text)
+    models_to_try = [GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.7-flash"]
+    last_exc = None
+    for model_name in list(dict.fromkeys(models_to_try)):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[handle, build_prompt(location)],
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=RESPONSE_SCHEMA,
+                ),
+            )
+            return json.loads(response.text)
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("Gemini model %s failed: %s, trying next model", model_name, exc)
+    if last_exc:
+        raise last_exc
+    return None
 
 
 async def analyse_footage(footage: Footage, location: str) -> Optional[dict[str, Any]]:
@@ -203,10 +226,14 @@ async def analyse_footage(footage: Footage, location: str) -> Optional[dict[str,
 
     finding["video_id"] = footage.video_id
     finding["uri"] = footage.uri
+    finding["filename"] = footage.filename
+    finding["description"] = footage.description
+    finding["location"] = footage.location
     finding["model"] = GEMINI_MODEL
     logger.info(
-        "Video analysis %s: %s (%s, confidence %.2f)",
+        "Video analysis %s (%s): %s (%s, confidence %.2f)",
         footage.video_id,
+        footage.filename,
         finding.get("assessment"),
         finding.get("severity"),
         float(finding.get("confidence") or 0.0),

@@ -1,6 +1,6 @@
 import { DocketItem } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://psa-backend-ac66w7g76q-as.a.run.app' : 'http://localhost:8000');
 
 export interface OrchestrationDecision {
   rationale: string;

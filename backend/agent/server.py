@@ -44,9 +44,10 @@ for fname in [".env", "config.env", ".env.production"]:
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent.cctv import CCTV_ROOT
 from agent.docket import attach_linked_to
 from agent.docket_shape import to_docket_item
 from agent.graph import build_graph
@@ -99,34 +100,32 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PSA Incident Triage Agent API", lifespan=lifespan)
+app = FastAPI(title="PSA Incident Sherlock API", lifespan=lifespan)
 
-if "*" in FRONTEND_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=FRONTEND_ORIGINS,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=FRONTEND_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class InvestigateRequest(BaseModel):
-    cluster_id: Optional[str] = None
-    # "live" runs the clustering algorithm over raw_alerts; "table" reads the
-    # legacy hand-seeded incident_clusters snapshot. Defaults to STAGE1_SOURCE.
-    source: Optional[str] = None
+    cluster_id: Optional[str] = Field(
+        default=None,
+        description="Single incident id (e.g. 'INC-2026-0823-0001') to investigate, or null for all.",
+    )
+    source: Optional[str] = Field(
+        default=None,
+        description="Override STAGE1_SOURCE ('live' or 'table') for this call.",
+    )
 
 
 class PersistRequest(BaseModel):
     source: Optional[str] = None
+    # True replaces every earlier row with this run — the default so you can run
+    # Stage 1 repeatedly during development without cluttering the database.
     # False appends this run alongside earlier ones instead of replacing them.
     replace: bool = True
 
@@ -179,7 +178,15 @@ def _finalize(result: dict[str, Any]) -> dict[str, Any]:
         result.get("aggregated_findings") or result.get("investigator_findings", []),
         result.get("correlation"),
     )
-    dockets = [to_docket_item(f, run_timestamp) for f in findings]
+    video_findings_map = result.get("video_findings") or {}
+    dockets = [
+        to_docket_item(
+            f,
+            run_timestamp,
+            video_findings=video_findings_map.get(f.get("incident_id"))
+        )
+        for f in findings
+    ]
     return {
         "dockets": dockets,
         "correlation": result.get("correlation"),
@@ -187,13 +194,22 @@ def _finalize(result: dict[str, Any]) -> dict[str, Any]:
         # Why each incident was routed where it was, and what the camera saw —
         # the UI needs these to show the orchestrator's reasoning.
         "orchestration": result.get("orchestration", {}),
-        "videoFindings": result.get("video_findings", {}),
+        "videoFindings": video_findings_map,
     }
 
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "stage1Source": STAGE1_SOURCE}
+
+
+@app.get("/api/video/{filename}")
+async def get_cctv_video(filename: str):
+    """Serves CCTV footage clips directly from the local backend video directory."""
+    video_path = CCTV_ROOT / filename
+    if not video_path.exists() or not video_path.is_file():
+        raise HTTPException(status_code=404, detail=f"CCTV video file '{filename}' not found")
+    return FileResponse(path=str(video_path), media_type="video/mp4", filename=filename)
 
 
 @app.get("/api/stage1")

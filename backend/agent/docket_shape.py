@@ -40,19 +40,28 @@ def strip_emojis(val: Any) -> Any:
     return val
 
 
+from typing import Any, Optional
+
+
 # Evidence items don't carry their own timestamp from the LLM (the underlying
 # tables the tools read from don't timestamp individual readings) — using the
 # time this investigation actually ran is honest; inventing a per-reading
 # timestamp would not be.
-def to_docket_item(finding: dict[str, Any], run_timestamp: str) -> dict[str, Any]:
+def to_docket_item(
+    finding: dict[str, Any],
+    run_timestamp: str,
+    video_findings: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
     finding = strip_emojis(finding)
+    incident_id = finding.get("incident_id", "UNKNOWN")
+    clips = video_findings if video_findings is not None else (finding.get("video_findings") or [])
     return {
-        "id": f"DOCKET-{finding['incident_id']}",
-        "clusterId": finding["incident_id"],
-        "title": finding["title"],
-        "severity": finding["severity"],
-        "impact": finding["impact"],
-        "rootCause": finding["root_cause"],
+        "id": f"DOCKET-{incident_id}",
+        "clusterId": incident_id,
+        "title": finding.get("title", ""),
+        "severity": finding.get("severity", "LOW"),
+        "impact": finding.get("impact", ""),
+        "rootCause": finding.get("root_cause", ""),
         "dispatchStatus": "PENDING",
         "physicalEvidence": [
             {"text": text, "timestamp": run_timestamp, "verified": True}
@@ -60,15 +69,16 @@ def to_docket_item(finding: dict[str, Any], run_timestamp: str) -> dict[str, Any
         ],
         "plcRegisters": [
             {
-                "code": reg["code"],
-                "name": reg["name"],
-                "status": reg["status"],
-                "description": reg["description"],
-                "category": reg["category"],
+                "code": reg.get("code", ""),
+                "name": reg.get("name", ""),
+                "status": reg.get("status", ""),
+                "description": reg.get("description", ""),
+                "category": reg.get("category", ""),
             }
             for reg in finding.get("plc_registers", [])
         ],
         "recommendedActions": finding.get("recommended_actions", []),
         "linkedTo": finding.get("linked_to", []),
+        "videoEvidence": clips,
     }
 

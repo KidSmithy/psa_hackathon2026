@@ -16,7 +16,9 @@ import {
   Send,
   AlertTriangle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Video,
+  Film
 } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -155,6 +157,104 @@ export const HumanReviewDocket: React.FC<HumanReviewDocketProps> = ({
           <MarkdownRenderer content={currentDocket.rootCause} />
         </div>
       </div>
+
+      {/* CCTV Video Footage & Visual Evidence */}
+      {currentDocket.videoEvidence && currentDocket.videoEvidence.length > 0 && (
+        <div className="bg-white border border-psa-border rounded-xl p-6 shadow-cyber-card space-y-4">
+          <div className="flex items-center justify-between font-mono">
+            <div className="flex items-center space-x-2 text-psa-navy-dark font-bold text-sm">
+              <Video className="w-5 h-5 text-tuas-teal-dark" />
+              <span>CCTV FOOTAGE & AI VIDEO ANALYSIS ({currentDocket.videoEvidence.length})</span>
+            </div>
+            <span className="text-xs bg-sky-50 text-sky-800 border border-sky-200 px-2.5 py-0.5 rounded font-bold">
+              GEMINI 3.7 FLASH VLM
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {currentDocket.videoEvidence.map((clip, cIdx) => {
+              const videoSrc = clip.public_url || clip.uri || (clip.filename ? `http://localhost:8000/api/video/${clip.filename}` : '');
+              const isIncident = clip.assessment === 'CONFIRMED_INCIDENT';
+              const isHazard = clip.assessment === 'POTENTIAL_HAZARD';
+
+              return (
+                <div key={cIdx} className="bg-slate-900 text-slate-100 rounded-xl p-4 border border-slate-800 space-y-3 font-mono shadow-sm">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+                    <div className="flex items-center space-x-2">
+                      <Film className="w-4 h-4 text-sky-400" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-100">
+                          {clip.description || clip.filename || `CCTV Camera Clip #${cIdx + 1}`}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Zone: {clip.location || 'Port Area'} {clip.filename ? `· ${clip.filename}` : ''}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                        isIncident
+                          ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                          : isHazard
+                          ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                          : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                      }`}>
+                        {clip.assessment?.replace(/_/g, ' ') || 'ANALYZED'}
+                      </span>
+                      {typeof clip.confidence === 'number' && (
+                        <span className="text-[10px] text-slate-400">
+                          {(clip.confidence * 100).toFixed(0)}% conf
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {videoSrc && (
+                    <div className="rounded-lg overflow-hidden bg-black border border-slate-800 flex items-center justify-center">
+                      <video
+                        controls
+                        className="w-full max-h-64 object-contain rounded-lg bg-black"
+                        src={videoSrc}
+                        preload="metadata"
+                      >
+                        Your browser does not support the video tag.
+                      </video>
+                    </div>
+                  )}
+
+                  {clip.summary && (
+                    <div className="bg-slate-800/90 p-3 rounded-lg border border-slate-700 text-xs text-slate-200 leading-relaxed font-sans">
+                      <span className="font-bold text-sky-400 font-mono text-[11px] block mb-1">
+                        Visual AI Finding:
+                      </span>
+                      {clip.summary}
+                    </div>
+                  )}
+
+                  {clip.observations && clip.observations.length > 0 && (
+                    <div className="space-y-1.5 text-xs">
+                      <div className="text-[11px] font-bold text-slate-400">
+                        Timeline Observations:
+                      </div>
+                      <div className="space-y-1 pl-1">
+                        {clip.observations.map((obs, oIdx) => (
+                          <div key={oIdx} className="flex items-start space-x-2 text-[11px] text-slate-300">
+                            <span className="bg-slate-800 text-sky-400 px-1.5 py-0.5 rounded text-[10px] shrink-0 border border-slate-700">
+                              {obs.timestamp}
+                            </span>
+                            <span className="flex-1 font-sans">{obs.what_happens}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Physical Evidence */}
       <div className="bg-white border border-psa-border rounded-xl p-6 shadow-cyber-card space-y-4">

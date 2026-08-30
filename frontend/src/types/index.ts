@@ -196,6 +196,31 @@ export interface IncidentCluster {
   }[];
 }
 
+export interface VideoObservation {
+  timestamp: string;
+  what_happens: string;
+  severity: string;
+  entities?: string[];
+}
+
+export interface VideoEvidenceItem {
+  video_id?: string;
+  uri?: string;
+  public_url?: string;
+  filename?: string;
+  description?: string;
+  location?: string;
+  assessment?: 'CONFIRMED_INCIDENT' | 'POTENTIAL_HAZARD' | 'NORMAL_ACTIVITY' | 'UNUSABLE_FOOTAGE' | string;
+  severity?: string;
+  confidence?: number;
+  summary?: string;
+  observations?: VideoObservation[];
+  entities_involved?: string[];
+  visual_cues?: string[];
+  source_alert_ids?: string[];
+  model?: string;
+}
+
 export interface DocketItem {
   id: string;
   clusterId: string;
@@ -217,6 +242,8 @@ export interface DocketItem {
     category?: string;
   }[];
   recommendedActions: string[];
+  linkedTo?: string[];
+  videoEvidence?: VideoEvidenceItem[];
 }
 
 export interface MCPToolCall {

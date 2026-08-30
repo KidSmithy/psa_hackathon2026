@@ -22,7 +22,9 @@ import {
   XCircle,
   AlertTriangle,
   ArrowRightCircle,
-  Sliders
+  Sliders,
+  Video,
+  Film
 } from 'lucide-react';
 import { DocketItem, ClusterWithAlerts } from '../types';
 import { streamInvestigation, InvestigateResult, StreamEvent } from '../lib/api';
@@ -226,6 +228,15 @@ export const sanitizeDocket = (docket: DocketItem): DocketItem => {
       ...r,
       description: stripEmojis(r.description),
       name: stripEmojis(r.name)
+    })),
+    videoEvidence: (docket.videoEvidence || []).map(v => ({
+      ...v,
+      summary: stripEmojis(v.summary || ''),
+      description: stripEmojis(v.description || ''),
+      observations: (v.observations || []).map(o => ({
+        ...o,
+        what_happens: stripEmojis(o.what_happens || '')
+      }))
     }))
   };
 };
@@ -864,6 +875,126 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 <MarkdownRenderer content={fMsg.docket.rootCause} />
                               </div>
                             </div>
+
+                            {/* CCTV Video Analysis & Footage */}
+                            {fMsg.docket.videoEvidence && fMsg.docket.videoEvidence.length > 0 && (
+                              <div className="space-y-3 pt-1">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 font-mono">
+                                  <span className="flex items-center gap-1.5 text-sky-900">
+                                    <Video className="w-3.5 h-3.5 text-sky-600" />
+                                    <span>CCTV FOOTAGE & AI VIDEO ANALYSIS ({fMsg.docket.videoEvidence.length})</span>
+                                  </span>
+                                  <span className="text-[10px] bg-sky-50 text-sky-800 border border-sky-200 px-2 py-0.5 rounded font-mono">
+                                    Gemini 3.7 Flash VLM
+                                  </span>
+                                </div>
+
+                                <div className="space-y-3">
+                                  {fMsg.docket.videoEvidence.map((clip, cIdx) => {
+                                    const videoSrc = clip.public_url || clip.uri || (clip.filename ? `http://localhost:8000/api/video/${clip.filename}` : '');
+                                    const isIncident = clip.assessment === 'CONFIRMED_INCIDENT';
+                                    const isHazard = clip.assessment === 'POTENTIAL_HAZARD';
+
+                                    return (
+                                      <div key={cIdx} className="bg-slate-900 text-slate-100 rounded-xl p-4 border border-slate-800 space-y-3 shadow-sm font-sans">
+                                        {/* Header: Camera info & assessment badge */}
+                                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+                                          <div className="flex items-center space-x-2">
+                                            <div className="p-1.5 bg-slate-800 text-sky-400 rounded-lg">
+                                              <Film className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                              <div className="font-bold text-xs text-slate-100">
+                                                {clip.description || clip.filename || `Camera Clip #${cIdx + 1}`}
+                                              </div>
+                                              <div className="text-[10px] text-slate-400 font-mono">
+                                                Zone: {clip.location || 'Port Yard'} {clip.filename ? `· ${clip.filename}` : ''}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center space-x-2">
+                                            <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded uppercase tracking-wider ${
+                                              isIncident
+                                                ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                                : isHazard
+                                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                                : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                            }`}>
+                                              {clip.assessment?.replace(/_/g, ' ') || 'ANALYZED'}
+                                            </span>
+                                            {typeof clip.confidence === 'number' && (
+                                              <span className="text-[10px] text-slate-400 font-mono">
+                                                {(clip.confidence * 100).toFixed(0)}% conf
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Video Player */}
+                                        {videoSrc && (
+                                          <div className="relative rounded-lg overflow-hidden bg-black border border-slate-800 flex items-center justify-center">
+                                            <video
+                                              controls
+                                              className="w-full max-h-64 object-contain rounded-lg bg-black"
+                                              src={videoSrc}
+                                              preload="metadata"
+                                            >
+                                              Your browser does not support the video tag.
+                                            </video>
+                                          </div>
+                                        )}
+
+                                        {/* AI Summary */}
+                                        {clip.summary && (
+                                          <div className="bg-slate-800/90 p-2.5 rounded-lg border border-slate-700/70 text-xs text-slate-200 leading-relaxed">
+                                            <span className="font-bold text-sky-400 font-mono text-[11px] block mb-0.5">
+                                              Visual AI Assessment:
+                                            </span>
+                                            {clip.summary}
+                                          </div>
+                                        )}
+
+                                        {/* Key Observations */}
+                                        {clip.observations && clip.observations.length > 0 && (
+                                          <div className="space-y-1.5 text-xs">
+                                            <div className="text-[11px] font-bold text-slate-400 font-mono">
+                                              Temporal Timeline Observations:
+                                            </div>
+                                            <div className="space-y-1 pl-1">
+                                              {clip.observations.map((obs, oIdx) => (
+                                                <div key={oIdx} className="flex items-start space-x-2 text-[11px] text-slate-300">
+                                                  <span className="bg-slate-800 text-sky-400 px-1.5 py-0.5 rounded font-mono text-[10px] shrink-0 border border-slate-700">
+                                                    {obs.timestamp}
+                                                  </span>
+                                                  <span className="flex-1 leading-snug">{obs.what_happens}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Visual Cues & Entities */}
+                                        {((clip.entities_involved && clip.entities_involved.length > 0) || (clip.visual_cues && clip.visual_cues.length > 0)) && (
+                                          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/80">
+                                            {(clip.entities_involved || []).map((ent, eIdx) => (
+                                              <span key={`ent-${eIdx}`} className="text-[10px] bg-sky-950/70 text-sky-300 border border-sky-800 px-2 py-0.5 rounded font-mono">
+                                                🏷️ {ent}
+                                              </span>
+                                            ))}
+                                            {(clip.visual_cues || []).map((cue, qIdx) => (
+                                              <span key={`cue-${qIdx}`} className="text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-mono">
+                                                👁️ {cue}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Hardware Evidence - Clean List (No nested cards) */}
                             {fMsg.docket.physicalEvidence && fMsg.docket.physicalEvidence.length > 0 && (
