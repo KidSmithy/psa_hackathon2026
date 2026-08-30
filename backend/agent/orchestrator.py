@@ -91,6 +91,24 @@ How to decide:
 2. Assign more than one investigator only when the incident genuinely spans domains and
    each one would gather different evidence. Two investigators that would call the same
    tools and reach the same conclusion is waste, not thoroughness. Three is the maximum.
+
+   Note that "stage1_problem_type" describes the KIND OF ALERT, not the full scope of the
+   incident: clustering groups alerts of one type, so the field is always single-valued
+   even when the incident is not. Look at "assets_involved" and
+   "stage1_priority_reasons" to see whether a second domain is implicated. Patterns that
+   genuinely need two specialists:
+     - a charging-station fault whose assets include a vehicle, with "low_battery_risk"
+       present: power_investigator for the station hardware, fleet_power_investigator for
+       the stranded vehicle
+     - a lane or traffic incident whose assets include a vehicle with "low_battery_risk":
+       lane_investigator for the blockage, fleet_power_investigator for whether the
+       vehicle simply ran flat
+     - an incident located on a lane whose assets include a charger or station:
+       lane_investigator for the operational impact, power_investigator for the electrical
+       cause
+     - "comms_ambiguous" on an incident with an otherwise clear domain: the specialist for
+       the domain, plus general_investigator for the connectivity loss
+   If none of those hold and the assets sit entirely inside one domain, assign one.
 3. Prefer the specialist over "general_investigator". Use the generalist when no specialist
    domain fits, not as a hedge.
 4. A single-alert incident usually warrants exactly one investigator, and sometimes the

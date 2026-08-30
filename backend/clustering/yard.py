@@ -20,6 +20,11 @@ RESOURCES: Dict[str, Tuple[str, Tuple[float, float]]] = {
     "LANE-12": ("lane", (660.0, 380.0)),
     "CHARGER-B1": ("charger", (150.0, 80.0)),
     "CHARGER-B3": ("charger", (298.0, 62.0)),
+    # BCSS-03 is present in bcss_chargers, asset_relationships and
+    # maintenance_records but was missing here, so alerts from it fell back to
+    # the default yard position and scored no charger_capacity_risk. The
+    # B1/B3 numbering is historical and does not track the BCSS-0n numbers.
+    "CHARGER-B4": ("charger", (200.0, 62.0)),
     "SECTOR-A": ("sector", (480.0, 80.0)),
     "QC-03-HANDOFF": ("crane_handoff", (150.0, 400.0)),
     "QC-04-HANDOFF": ("crane_handoff", (182.0, 240.0)),
@@ -43,6 +48,9 @@ RESOURCE_ALIASES: Dict[str, str] = {
     "Station_BCSS_01": "CHARGER-B1",
     "BCSS-01": "CHARGER-B1",
     "BCSS_01": "CHARGER-B1",
+    "Station_BCSS_03": "CHARGER-B4",
+    "BCSS-03": "CHARGER-B4",
+    "BCSS_03": "CHARGER-B4",
     "Sector_A": "SECTOR-A",
     "SECTOR_A": "SECTOR-A",
     "Sector A": "SECTOR-A",
@@ -65,6 +73,7 @@ EDGES: List[Tuple[str, str]] = [
     ("QC-03-HANDOFF", "QC-04-HANDOFF"),
     ("QC-04-HANDOFF", "QC-05-HANDOFF"),
     ("CHARGER-B1", "CHARGER-B3"),
+    ("CHARGER-B4", "CHARGER-B1"),
     ("CHARGER-B3", "SECTOR-A"),
     ("LANE-4", "CHARGER-B1"),
     ("JUNCTION-L7-A", "LANE-8"),
@@ -84,6 +93,7 @@ ZONE_OF: Dict[str, str] = {
     "LANE-12": "LANE-12",
     "CHARGER-B1": "YARD-B1",
     "CHARGER-B3": "YARD-B3",
+    "CHARGER-B4": "YARD-B4",
     "SECTOR-A": "SECTOR-A",
     "QC-03-HANDOFF": "QUAY-03",
     "QC-04-HANDOFF": "QUAY-04",
@@ -98,8 +108,9 @@ NAMED_FEATURE: Dict[str, str] = {
     "LANE-4": "Lane 4 transfer corridor",
     "LANE-8": "Lane 8 buffer lane",
     "LANE-12": "Lane 12 outbound lane",
-    "CHARGER-B1": "BCSS Charger B1",
+    "CHARGER-B1": "BCSS Charger B1 (BCSS-01)",
     "CHARGER-B3": "BCSS Charger B3 (BCSS-02)",
+    "CHARGER-B4": "BCSS Charger B4 (BCSS-03)",
     "SECTOR-A": "Sector A staging buffer",
     "QC-03-HANDOFF": "QC-03 handoff apron (Berth 1)",
     "QC-04-HANDOFF": "QC-04 handoff apron (Berth 2)",
