@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <p className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-tuas-teal animate-ping shrink-0"></span>
-              <span>SG::TUAS_PORT • SECTOR_A / BERTH_2 • LIVE TELEMETRY</span>
+              <span>SECTOR_A / BERTH_2 • LIVE TELEMETRY</span>
             </p>
           </div>
         </div>
