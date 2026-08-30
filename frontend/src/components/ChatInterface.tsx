@@ -529,11 +529,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     if (!selectedCluster?.cluster_id) return;
     const clusterId = selectedCluster.cluster_id;
-    const clusterName = selectedCluster.name;
-    const clusterLabel = `${clusterId}: ${clusterName}`;
 
     triggerAgentSpawningSimulation(
-      `Run Agentic AI investigation for ${clusterLabel}`,
+      `Run Agentic AI investigation for ${clusterId}`,
       clusterId
     );
 
