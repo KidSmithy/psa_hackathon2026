@@ -33,6 +33,46 @@ Sherlock AI is an agentic incident triage workflow for PSA's Tuas Port operation
 
 ---
 
+## Sherlock AI Walkthrough
+
+1. **AGV Yard Map**
+   ![AGV Yard Map](gallery/AGV%20Yard%20Map.png)
+   A real time view of every AGV's position and status across the Tuas yard, so an operator can see at a glance where an incident is happening.
+
+2. **Unified Incident Timeline**
+   ![Unified Incident Timeline](gallery/Unified%20Incident%20Timeline.png)
+   A single timeline showing onsets, incidents, and alerts across the whole terminal, with a detail panel for whichever incident is selected.
+
+3. **Incident Queue**
+   ![Incident Queue](gallery/Incident%20Queue.png)
+   The incidents Stage 1 clustering has produced from raw alerts, ready to be picked for investigation.
+
+4. **View Real Time - Agent Reasoning**
+   ![View Real Time - Agent Reasoning](gallery/View%20Real%20Time%20-%20Agent%20Reasoning%20.png)
+   The live investigation view, streaming the currently active agent's reasoning and MCP tool calls as the pipeline runs.
+
+5. **Completed Analysis**
+   ![Completed Analysis](gallery/Completed%20Analysis.png)
+   A finished investigation's docket, showing the root cause, the supporting evidence, and the recommended action.
+
+6. **View Investigation Steps**
+   ![View Investigation Steps](gallery/View%20Investigation%20Steps.png)
+   The full trajectory the pipeline actually took for one incident: video analysis, orchestrator assignment, investigator findings, and correlation.
+
+7. **CCTV Video Shown**
+   ![CCTV Video Shown](gallery/CCTV%20Video%20Shown.png)
+   An incident's linked CCTV clip surfaced in the docket as supporting evidence.
+
+8. **CCTV Video Shown 2**
+   ![CCTV Video Shown 2](gallery/CCTV%20Video%20Shown%202.png)
+   A second example of CCTV footage used as evidence, for a different incident.
+
+9. **Suggested Actions**
+   ![Suggested Actions](gallery/Suggested%20Actions.png)
+   The human in the loop panel, where a controller accepts or rejects the agent's recommended action.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
