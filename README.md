@@ -108,6 +108,18 @@ A human is always in the loop. Every recommendation lands in a docket with its s
 
 ---
 
+## Security
+
+Every agent in the pipeline operates under the least privilege it needs, not full access. Each stage runs with a fixed role (investigator agents run as `LANE_OPERATIONS_ENGINEER`, docket submission runs as `SYSTEM_COORDINATOR`), and the MCP server checks that role against a permissions matrix before allowing any tool call. An investigator agent, for example, can never call the tool that submits a docket.
+
+Every tool call, whether permitted or denied, is written to an audit log with the role, the tool, the parameters, the latency, and the outcome.
+
+Sherlock AI also practices data minimization: the human-written diagnosis on a raw alert is never shown to any model. Agents only ever see machine-emitted signal, such as fault codes, timestamps, and locations, and a dedicated check enforces that the diagnosis field can never leak into a prompt.
+
+Today, these roles are fixed per pipeline stage rather than tied to an authenticated PSA staff member. Adding real, login-backed role-based access control, so that different PSA staff roles see and approve different sets of incidents, is planned as future work.
+
+---
+
 ## 📁 Repository Structure
 
 ```text
