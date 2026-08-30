@@ -199,7 +199,7 @@ export const AlertsClustersPage: React.FC<AlertsClustersPageProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 font-sans">
+    <div className="space-y-6 max-w-full mx-auto pb-12 font-sans">
       
       {/* High-Contrast Top Summary Metrics Bar */}
       <div className="bg-psa-navy text-white border border-tuas-cyan/30 rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4 font-mono text-xs">
