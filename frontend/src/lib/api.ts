@@ -2,10 +2,34 @@ import { DocketItem } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+export interface OrchestrationDecision {
+  rationale: string;
+  domains: string[];
+  had_video: boolean;
+}
+
+export interface VideoFinding {
+  video_id?: string;
+  camera_id?: string | null;
+  source_alert_ids?: string[];
+  assessment?: 'CONFIRMED_INCIDENT' | 'POTENTIAL_HAZARD' | 'NORMAL_ACTIVITY' | 'UNUSABLE_FOOTAGE';
+  severity?: string;
+  confidence?: number;
+  summary?: string;
+  observations?: { timestamp: string; what_happens: string; severity: string; entities?: string[] }[];
+  entities_involved?: string[];
+  visual_cues?: string[];
+}
+
 export interface InvestigateResult {
   dockets: DocketItem[];
   correlation: { linked_groups: { incident_ids: string[]; reason: string }[] } | null;
   docketResult: { docket_id: string; status: string; timestamp: string } | null;
+  /** Why each incident was routed where it was, keyed by incident id. */
+  orchestration?: Record<string, OrchestrationDecision>;
+  /** What the cameras saw, keyed by incident id. A list: the CCTV link is
+   *  alert-level, so one incident can have clips from several cameras. */
+  videoFindings?: Record<string, VideoFinding[]>;
 }
 
 /** Runs the full investigation and waits for the final result — no live progress. */

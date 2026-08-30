@@ -70,6 +70,24 @@ const NODE_METADATA: Record<string, { name: string; role: string; phase: number;
     phase: 1,
     phaseLabel: '1. Routing & Context Assignment',
   },
+  video_analysis: {
+    name: 'CCTV Video Analyst',
+    role: 'Gemini Vision — Independent Footage Assessment',
+    phase: 1,
+    phaseLabel: '1. CCTV Footage Analysis',
+  },
+  orchestrator: {
+    name: 'Triage Orchestrator',
+    role: 'Investigator Selection from Cause, Telemetry & Footage',
+    phase: 1,
+    phaseLabel: '1. Orchestrator Agent Assignment',
+  },
+  aggregator: {
+    name: 'Findings Aggregator',
+    role: 'Multi-Specialist Reconciliation & Conflict Surfacing',
+    phase: 3,
+    phaseLabel: '3. Reconciling Specialist Findings',
+  },
   lane_investigator: {
     name: 'Lane Operations Specialist',
     role: 'Transfer Lane Telemetry & PLC Register Diagnostics',
