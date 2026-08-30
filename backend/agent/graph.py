@@ -1,20 +1,20 @@
 """
 Builds and compiles the orchestrator-worker graph:
 
-    START -> coordinator -> (fan out, by real assigned_agent) -> [lane_investigator |
-                                                                    power_investigator |
-                                                                    fleet_power_investigator]
-                                              \\              |              /
-                                               -> correlation -> submit_docket -> END
+    START -> (fan out, by domain) -> investigator -> correlation -> submit_docket -> END
 
-All 3 investigators the incident_clusters table actually assigns work to are
-registered here (lane_investigator handles both Cluster A and Cluster D —
-see coordinator.py for why).
+"investigator" is one graph node; internally it dispatches to whichever of
+the 4 domain agents (lane/power/fleet_power/general) the incident's domain
+calls for. There used to be a "coordinator" node between START and the
+fan-out, but it only ever returned {} — the actual routing decision has
+always lived in assign_investigators() (see coordinator.py). Removed rather
+than kept as a placeholder: add it back only when there is a real decision
+for it to make.
 """
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.coordinator import assign_investigators, coordinator
+from agent.coordinator import assign_investigators
 from agent.correlation import correlation_node
 from agent.docket import make_docket_node
 from agent.investigators import fleet_power, general, lane, power
@@ -22,18 +22,11 @@ from agent.investigators.base import make_investigator_node
 from agent.mcp_tools import bind_actor_context, build_mcp_client, filter_tools
 from agent.state import OverallState
 
-INVESTIGATOR_NODE_NAMES = [
-    "lane_investigator",
-    "power_investigator",
-    "fleet_power_investigator",
-    "general_investigator",
-]
-
 
 async def build_graph():
     """
     Async because fetching MCP tools requires connecting to the stdio
-    servers first. Returns the compiled graph and the underlying
+    server first. Returns the compiled graph and the underlying
     MultiServerMCPClient (caller is responsible for its lifecycle).
     """
     client = build_mcp_client()
@@ -41,7 +34,7 @@ async def build_graph():
 
     # Roles picked from backend/mcp/security.py's RBAC_PERMISSIONS matrix:
     # LANE_OPERATIONS_ENGINEER is the smallest role that covers every read
-    # tool used by all 3 investigators; SYSTEM_COORDINATOR is the only role
+    # tool used by all 4 investigators; SYSTEM_COORDINATOR is the only role
     # permitted to call submit_incident_docket.
     lane_tools = bind_actor_context(
         filter_tools(all_tools, lane.TOOL_NAMES), "LANE_OPERATIONS_ENGINEER"
@@ -82,13 +75,11 @@ async def build_graph():
 
     builder = StateGraph(OverallState)
 
-    builder.add_node("coordinator", coordinator)
     builder.add_node("investigator", investigator_dispatcher)
     builder.add_node("correlation", correlation_node)
     builder.add_node("submit_docket", make_docket_node(docket_tool))
 
-    builder.add_edge(START, "coordinator")
-    builder.add_conditional_edges("coordinator", assign_investigators, ["investigator"])
+    builder.add_conditional_edges(START, assign_investigators, ["investigator"])
     builder.add_edge("investigator", "correlation")
     builder.add_edge("correlation", "submit_docket")
     builder.add_edge("submit_docket", END)

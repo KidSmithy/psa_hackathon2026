@@ -1,9 +1,7 @@
 """
-Coordinator — the orchestrator node.
-
-Routes each incident cluster to the investigator that owns its domain, using
-Send() for dynamic fan-out (per LangGraph's orchestrator-worker pattern). It
-does not call an LLM.
+Coordinator — routes each incident to the investigator that owns its domain,
+using Send() for dynamic fan-out (per LangGraph's orchestrator-worker
+pattern). No LLM call; this is the whole routing decision.
 
 Routing is a property of the *problem*, not of the cluster id. Stage 1 now
 produces an open set of incidents (however many distinct problems the alert
@@ -12,10 +10,6 @@ dominant problem type maps to — see clustering/problem_types.py. The
 AGENT_TO_INVESTIGATOR_NODE map below only exists for clusters read from the
 old hand-seeded `incident_clusters` table, which carries an agent name and no
 problem type.
-
-Future home for topology-aware severity assessment (calling the diagnostics
-server's get_asset_impact tool to weigh upstream/downstream impact before
-routing) — not built yet, kept out until it's needed.
 """
 
 from typing import Any
@@ -44,11 +38,6 @@ def resolve_domain(cluster: dict[str, Any]) -> str:
     if domain:
         return domain
     return AGENT_TO_INVESTIGATOR_NODE.get(cluster.get("assigned_agent"), DEFAULT_INVESTIGATOR_NODE)
-
-
-def coordinator(state: OverallState) -> dict[str, Any]:
-    """Pass-through today. Kept as its own node so impact assessment has a home later."""
-    return {}
 
 
 def assign_investigators(state: OverallState) -> list[Send]:
