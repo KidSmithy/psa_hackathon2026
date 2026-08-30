@@ -8,10 +8,9 @@ import {
   Terminal, 
   CheckCircle2, 
   Check, 
-  RotateCcw, 
-  ArrowRight, 
-  Lock, 
-  Wrench, 
+  RotateCcw,
+  ArrowRight,
+  Wrench,
   Activity, 
   Zap,
   ArrowLeft,
@@ -47,8 +46,6 @@ interface ChatMessage {
     agentName: string;
     agentRole: string;
     cluster: string;
-    tokensUsed: number;
-    maxTokens: number;
     toolsUsed: { tool: string; args: Record<string, any> }[];
     logs: string[];
   };
@@ -299,8 +296,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               agentName: agentLabel,
               agentRole: roleClean,
               cluster: finding.incident_id,
-              tokensUsed: 100,
-              maxTokens: 100,
               toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
               logs: [
                 `Root cause: ${rootCauseClean}`,
@@ -437,8 +432,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               agentName: agentLabel,
               agentRole: roleClean,
               cluster: finding.incident_id,
-              tokensUsed: 100,
-              maxTokens: 100,
               toolsUsed: (finding.tools_used as { tool: string; args: Record<string, any> }[]) || [],
               logs: [
                 `Root cause: ${rootCauseClean}`,
@@ -514,8 +507,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             agentName: 'Agent 1: Lane & Actuator Investigator',
             agentRole: 'Dynamic Rerouting & Automated Actuator Purge Sub-Graph',
             cluster: 'Cluster A (Revision 2)',
-            tokensUsed: 1620,
-            maxTokens: 2000,
             toolsUsed: [{ tool: 'get_alternate_bypass_routing', args: { from: 'Lane-07', via: 'Lane-06' } }],
             logs: [
               `Discarded original constraint path: "${rejectedAction}"`,
@@ -820,16 +811,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                         </div>
                                         <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold">
                                           0% CONTAMINATION
-                                        </span>
-                                      </div>
-
-                                      <div className="flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg">
-                                        <span className="flex items-center gap-1">
-                                          <Lock className="w-3 h-3 text-sky-600" />
-                                          <span>Isolated Tokens:</span>
-                                        </span>
-                                        <span className="font-bold text-sky-700">
-                                          {tMsg.spawningProgress.tokensUsed} / {tMsg.spawningProgress.maxTokens} ({Math.round((tMsg.spawningProgress.tokensUsed / tMsg.spawningProgress.maxTokens) * 100)}%)
                                         </span>
                                       </div>
 
