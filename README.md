@@ -105,6 +105,8 @@ The full pipeline, top to bottom: `raw_alerts` feeds Stage 1's open clustering, 
 | Frontend | React + TypeScript | Live investigation view, incident queue, time ribbon, and the human accept/reject docket UI. |
 | Observability | Langfuse | Every node, video analysis, orchestrator, each investigator, aggregator, correlation, traced separately. |
 
+![Tech Stack](gallery/PSA_CodeSprint_Techstack.png)
+
 ---
 
 ## Responsible & Transparent AI
